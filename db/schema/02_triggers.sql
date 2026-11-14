@@ -46,3 +46,37 @@ FOR EACH ROW EXECUTE FUNCTION reject_restaurant_change();
 CREATE TRIGGER product_restaurant_check
 BEFORE UPDATE OF restaurant_id ON product
 FOR EACH ROW EXECUTE FUNCTION reject_restaurant_change();
+
+CREATE FUNCTION check_order_has_items()
+RETURNS trigger
+LANGUAGE plpgsql
+SET search_path TO egorov_food, pg_temp
+AS $$
+DECLARE
+    checked_order_id uuid;
+BEGIN
+    IF TG_TABLE_NAME = 'orders' THEN
+        checked_order_id := NEW.order_id;
+    ELSE
+        checked_order_id := OLD.order_id;
+    END IF;
+
+    IF EXISTS (SELECT 1 FROM orders WHERE order_id = checked_order_id)
+       AND NOT EXISTS (SELECT 1 FROM order_structure WHERE order_id = checked_order_id) THEN
+        RAISE EXCEPTION 'Заказ должен содержать хотя бы одну позицию'
+            USING ERRCODE = '23514';
+    END IF;
+
+    RETURN NULL;
+END;
+$$;
+
+CREATE CONSTRAINT TRIGGER orders_items_check
+AFTER INSERT OR UPDATE OF order_id ON orders
+DEFERRABLE INITIALLY DEFERRED
+FOR EACH ROW EXECUTE FUNCTION check_order_has_items();
+
+CREATE CONSTRAINT TRIGGER order_structure_items_check
+AFTER DELETE OR UPDATE OF order_id ON order_structure
+DEFERRABLE INITIALLY DEFERRED
+FOR EACH ROW EXECUTE FUNCTION check_order_has_items();
