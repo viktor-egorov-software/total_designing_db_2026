@@ -145,6 +145,31 @@ AS $$
     WHERE order_id = checked_order_id;
 $$;
 
+CREATE FUNCTION check_order_pay_status()
+RETURNS trigger
+LANGUAGE plpgsql
+SET search_path TO egorov_food, pg_temp
+AS $$
+BEGIN
+    IF EXISTS (
+        SELECT 1
+        FROM orders
+        WHERE order_id = NEW.order_id
+          AND pay_status <> calculate_order_pay_status(order_id)
+    ) THEN
+        RAISE EXCEPTION 'Статус оплаты заказа должен соответствовать попыткам оплаты'
+            USING ERRCODE = '23514';
+    END IF;
+
+    RETURN NULL;
+END;
+$$;
+
+CREATE CONSTRAINT TRIGGER orders_pay_status_check
+AFTER INSERT OR UPDATE OF order_id, pay_status ON orders
+DEFERRABLE INITIALLY DEFERRED
+FOR EACH ROW EXECUTE FUNCTION check_order_pay_status();
+
 CREATE FUNCTION refresh_order_pay_status()
 RETURNS trigger
 LANGUAGE plpgsql
