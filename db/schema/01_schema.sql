@@ -36,16 +36,16 @@ CREATE TYPE review_entity_type AS ENUM (
 
 CREATE TABLE client (
     client_id uuid PRIMARY KEY DEFAULT exts.uuid_generate_v4(),
-    login varchar NOT NULL UNIQUE,
+    login varchar(128) NOT NULL UNIQUE,
     password varchar(32) NOT NULL CHECK (password ~ '^[0-9a-fA-F]{32}$'),
-    phone_number varchar NOT NULL UNIQUE
+    phone_number varchar(32) NOT NULL UNIQUE
 );
 
 CREATE TABLE address (
     address_id uuid PRIMARY KEY DEFAULT exts.uuid_generate_v4(),
-    street varchar NOT NULL,
-    house_number varchar NOT NULL,
-    apartment_office varchar,
+    street varchar(256) NOT NULL,
+    house_number varchar(32) NOT NULL,
+    apartment_office varchar(32),
     UNIQUE NULLS NOT DISTINCT (street, house_number, apartment_office)
 );
 
@@ -57,7 +57,7 @@ CREATE TABLE client_address (
 
 CREATE TABLE restaurant (
     restaurant_id uuid PRIMARY KEY DEFAULT exts.uuid_generate_v4(),
-    restaurant_name varchar NOT NULL,
+    restaurant_name varchar(256) NOT NULL,
     address_id uuid NOT NULL UNIQUE REFERENCES address (address_id),
     description text NOT NULL,
     work_start time NOT NULL,
@@ -69,12 +69,12 @@ CREATE TABLE restaurant (
 
 CREATE TABLE product_category (
     product_category_id uuid PRIMARY KEY DEFAULT exts.uuid_generate_v4(),
-    product_category_name varchar NOT NULL
+    product_category_name varchar(256) NOT NULL
 );
 
 CREATE TABLE product (
     product_id uuid PRIMARY KEY DEFAULT exts.uuid_generate_v4(),
-    product_name varchar NOT NULL,
+    product_name varchar(256) NOT NULL,
     product_category_id uuid NOT NULL REFERENCES product_category (product_category_id),
     price numeric NOT NULL CHECK (price >= 0),
     restaurant_id uuid NOT NULL REFERENCES restaurant (restaurant_id),
