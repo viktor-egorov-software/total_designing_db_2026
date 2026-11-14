@@ -63,7 +63,7 @@ CREATE TABLE restaurant (
     work_start time NOT NULL,
     work_end time NOT NULL CHECK (work_end > work_start),
     company_details text NOT NULL,
-    rating numeric CHECK (rating BETWEEN 0 AND 5),
+    rating numeric(3,2) CHECK (rating BETWEEN 0 AND 5),
     status restaurant_status NOT NULL
 );
 
@@ -76,10 +76,10 @@ CREATE TABLE product (
     product_id uuid PRIMARY KEY DEFAULT exts.uuid_generate_v4(),
     product_name varchar(256) NOT NULL,
     product_category_id uuid NOT NULL REFERENCES product_category (product_category_id),
-    price numeric NOT NULL CHECK (price >= 0),
+    price numeric(12,2) NOT NULL CHECK (price >= 0),
     restaurant_id uuid NOT NULL REFERENCES restaurant (restaurant_id),
     photo_url text,
-    rating numeric CHECK (rating BETWEEN 0 AND 5),
+    rating numeric(3,2) CHECK (rating BETWEEN 0 AND 5),
     status product_status NOT NULL,
     description text NOT NULL
 );
@@ -91,15 +91,15 @@ CREATE TABLE courier (
     status courier_status NOT NULL,
     hire_date date NOT NULL,
     dismissal_date date,
-    coefficient numeric NOT NULL DEFAULT 0.1 CHECK (coefficient BETWEEN 0.1 AND 0.5),
+    coefficient numeric(2,2) NOT NULL DEFAULT 0.1 CHECK (coefficient BETWEEN 0.1 AND 0.5),
     CHECK (status <> 'уволен' OR dismissal_date IS NOT NULL)
 );
 
 CREATE TABLE courier_pay (
-    year integer,
-    month integer CHECK (month BETWEEN 1 AND 12),
+    year smallint,
+    month smallint CHECK (month BETWEEN 1 AND 12),
     courier_id uuid REFERENCES courier (courier_id),
-    amount numeric NOT NULL CHECK (amount >= 0),
-    coefficient_used numeric NOT NULL CHECK (coefficient_used BETWEEN 0.1 AND 0.5),
+    amount numeric(12,2) NOT NULL CHECK (amount >= 0),
+    coefficient_used numeric(2,2) NOT NULL CHECK (coefficient_used BETWEEN 0.1 AND 0.5),
     PRIMARY KEY (year, month, courier_id)
 );
