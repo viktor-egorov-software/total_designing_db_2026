@@ -11,6 +11,8 @@
 По BR-11.6 для цены, суммы выплаты и сумм заказа выбран `numeric(12,2)` — до
 9 999 999 999,99 с точностью до копеек; для рейтингов — `numeric(3,2)`;
 для коэффициентов — `numeric(2,2)`, включая значения вроде `0.15`.
+Для количества блюда — `numeric(8,3)`: три дробных знака позволяют
+указывать, например, `0.125` кг.
 Лишние дробные знаки округляются до проверки `CHECK`.
 
 ## Имена таблиц
@@ -51,6 +53,7 @@
 | `orders` | `total_amount` | `total_amount >= 1000` | BR-7.11 | Общая сумма заказа не менее 1000 ₽. |
 | `orders` | `status`, `delivery_timestamp` | `status <> 'доставлен' OR delivery_timestamp IS NOT NULL` | BR-7.12 | У доставленного заказа указано время окончания доставки. |
 | `orders` | `delivery_timestamp`, `order_timestamp` | `delivery_timestamp >= order_timestamp` | BR-7.13 | Доставка заканчивается не раньше создания заказа. |
+| `order_structure` | `quantity` | `quantity > 0` | BR-7.15 | Количество блюда положительно и может быть дробным. |
 
 ## UNIQUE-ограничения
 
@@ -74,6 +77,8 @@
 | `orders` | `courier_id` | `courier(courier_id)` | BR-7.5 | Заказ доставляет существующий курьер. |
 | `orders` | `restaurant_id` | `restaurant(restaurant_id)` | BR-7.2 | Заказ относится к одному существующему ресторану. |
 | `orders` | `client_id`, `address_id` | `client_address(client_id, address_id)` | BR-7.2, BR-7.4 | Составной FK требует, чтобы адрес доставки был привязан к клиенту заказа. |
+| `order_structure` | `order_id` | `orders(order_id)` | BR-7.14 | Позиция входит в состав заказа. |
+| `order_structure` | `product_id` | `product(product_id)` | BR-7.14 | Позиция содержит существующее блюдо; блюдо может входить в несколько заказов. |
 
 ## NULL (осознанно разрешено)
 

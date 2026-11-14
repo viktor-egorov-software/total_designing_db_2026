@@ -123,3 +123,10 @@ CREATE TABLE orders (
     CHECK (status <> 'доставлен' OR delivery_timestamp IS NOT NULL),
     CHECK (delivery_timestamp >= order_timestamp)
 );
+
+CREATE TABLE order_structure (
+    order_id uuid REFERENCES orders (order_id),
+    product_id uuid REFERENCES product (product_id),
+    quantity numeric(8,3) NOT NULL CHECK (quantity > 0),
+    PRIMARY KEY (order_id, product_id)
+);
