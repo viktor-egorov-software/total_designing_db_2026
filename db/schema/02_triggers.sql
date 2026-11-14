@@ -144,3 +144,37 @@ $$;
 CREATE TRIGGER payment_pay_status_refresh
 AFTER INSERT OR DELETE OR UPDATE OF status ON payment
 FOR EACH ROW EXECUTE FUNCTION refresh_order_pay_status();
+
+CREATE FUNCTION check_review_entity()
+RETURNS trigger
+LANGUAGE plpgsql
+SET search_path TO egorov_food, pg_temp
+AS $$
+BEGIN
+    IF EXISTS (
+        SELECT 1
+        FROM review r
+        JOIN orders o ON o.order_id = r.order_id
+        WHERE r.order_id = NEW.order_id
+          AND (
+              (r.entity_type = 'блюдо' AND NOT EXISTS (
+                  SELECT 1
+                  FROM order_structure os
+                  WHERE os.order_id = r.order_id AND os.product_id = r.entity_id
+              ))
+              OR (r.entity_type = 'ресторан' AND r.entity_id <> o.restaurant_id)
+              OR (r.entity_type = 'заказ' AND r.entity_id <> r.order_id)
+          )
+    ) THEN
+        RAISE EXCEPTION 'Объект отзыва должен относиться к указанному заказу'
+            USING ERRCODE = '23514';
+    END IF;
+
+    RETURN NULL;
+END;
+$$;
+
+CREATE CONSTRAINT TRIGGER review_entity_check
+AFTER INSERT OR UPDATE OF order_id, entity_id, entity_type ON review
+DEFERRABLE INITIALLY DEFERRED
+FOR EACH ROW EXECUTE FUNCTION check_review_entity();
