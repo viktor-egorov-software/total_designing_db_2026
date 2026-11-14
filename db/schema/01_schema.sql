@@ -45,11 +45,24 @@ CREATE TABLE address (
     address_id uuid PRIMARY KEY DEFAULT exts.uuid_generate_v4(),
     street varchar NOT NULL,
     house_number varchar NOT NULL,
-    apartment_office varchar
+    apartment_office varchar,
+    UNIQUE NULLS NOT DISTINCT (street, house_number, apartment_office)
 );
 
 CREATE TABLE client_address (
     client_id uuid REFERENCES client (client_id),
     address_id uuid REFERENCES address (address_id),
     PRIMARY KEY (client_id, address_id)
+);
+
+CREATE TABLE restaurant (
+    restaurant_id uuid PRIMARY KEY DEFAULT exts.uuid_generate_v4(),
+    restaurant_name varchar NOT NULL,
+    address_id uuid NOT NULL UNIQUE REFERENCES address (address_id),
+    description text NOT NULL,
+    work_start time NOT NULL,
+    work_end time NOT NULL CHECK (work_end > work_start),
+    company_details text NOT NULL,
+    rating numeric CHECK (rating BETWEEN 0 AND 5),
+    status restaurant_status NOT NULL
 );
