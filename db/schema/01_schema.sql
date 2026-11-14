@@ -66,3 +66,20 @@ CREATE TABLE restaurant (
     rating numeric CHECK (rating BETWEEN 0 AND 5),
     status restaurant_status NOT NULL
 );
+
+CREATE TABLE product_category (
+    product_category_id uuid PRIMARY KEY DEFAULT exts.uuid_generate_v4(),
+    product_category_name varchar NOT NULL
+);
+
+CREATE TABLE product (
+    product_id uuid PRIMARY KEY DEFAULT exts.uuid_generate_v4(),
+    product_name varchar NOT NULL,
+    product_category_id uuid NOT NULL REFERENCES product_category (product_category_id),
+    price numeric NOT NULL CHECK (price >= 0),
+    restaurant_id uuid NOT NULL REFERENCES restaurant (restaurant_id),
+    photo_url text,
+    rating numeric CHECK (rating BETWEEN 0 AND 5),
+    status product_status NOT NULL,
+    description text NOT NULL
+);
