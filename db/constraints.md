@@ -105,6 +105,7 @@
 | `orders` | `status`, `delivery_timestamp` | `status <> 'доставлен' OR delivery_timestamp IS NOT NULL` | BR-7.12 | У доставленного заказа указано время окончания доставки. |
 | `orders` | `delivery_timestamp`, `order_timestamp` | `delivery_timestamp >= order_timestamp` | BR-7.13 | Доставка заканчивается не раньше создания заказа. |
 | `order_structure` | `quantity` | `quantity > 0` | BR-7.15 | Количество блюда положительно и может быть дробным. |
+| `review` | `rating` | `rating BETWEEN 1 AND 5` | BR-9.4 | Рейтинг отзыва находится в диапазоне от 1 до 5. |
 
 ## UNIQUE-ограничения
 
@@ -116,6 +117,7 @@
 | `restaurant` | `address_id` | BR-3.3, BR-3.4 | Один адрес может использоваться только одним рестораном. |
 | `payment` | `transaction_id` | BR-8.3 | Внешний идентификатор финансовой транзакции уникален. |
 | `payment` | `order_id` при `status = 'успех'` | BR-8.1, BR-8.7 | Частичный уникальный индекс `payment_one_success_per_order` запрещает вторую успешную оплату заказа. |
+| `review` | `order_id`, `entity_type`, `entity_id` | BR-9.5 | В рамках одного заказа допускается один отзыв на каждый объект. |
 
 ## FK-ограничения
 
@@ -133,6 +135,7 @@
 | `order_structure` | `order_id` | `orders(order_id)` | BR-7.14 | Позиция входит в состав заказа. |
 | `order_structure` | `product_id` | `product(product_id)` | BR-7.14 | Позиция содержит существующее блюдо; блюдо может входить в несколько заказов. |
 | `payment` | `order_id` | `orders(order_id)` | BR-8.1 | Попытка оплаты относится к существующему заказу; у заказа может быть несколько попыток. |
+| `review` | `order_id` | `orders(order_id)` | BR-9.2 | Отзыв связан с существующим заказом. Автор определяется через `orders.client_id`, поэтому в `review` отдельный `client_id` не хранится. |
 
 ## NULL (осознанно разрешено)
 
@@ -144,6 +147,7 @@
 | `product` | `rating` | BR-9.7 | Если отзывов нет, рейтинг блюда равен `NULL`. |
 | `courier` | `dismissal_date` | BR-6.3 | Дата увольнения необязательна для работающего курьера. |
 | `orders` | `delivery_timestamp` | BR-7.12 | До завершения доставки время её окончания может отсутствовать. |
+| `review` | `photo_url` | BR-9.3 | Фотография отзыва необязательна. |
 
 ## DEFAULT и GENERATED
 

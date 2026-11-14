@@ -143,3 +143,15 @@ CREATE TABLE payment (
 
 CREATE UNIQUE INDEX payment_one_success_per_order
 ON payment (order_id) WHERE status = 'успех';
+
+CREATE TABLE review (
+    review_id uuid PRIMARY KEY DEFAULT exts.uuid_generate_v4(),
+    review_timestamp timestamp NOT NULL,
+    entity_id uuid NOT NULL,
+    entity_type review_entity_type NOT NULL,
+    order_id uuid NOT NULL REFERENCES orders (order_id),
+    description text NOT NULL,
+    photo_url text,
+    rating numeric(3,2) NOT NULL CHECK (rating BETWEEN 1 AND 5),
+    UNIQUE (order_id, entity_type, entity_id)
+);
