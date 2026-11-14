@@ -130,3 +130,16 @@ CREATE TABLE order_structure (
     quantity numeric(8,3) NOT NULL CHECK (quantity > 0),
     PRIMARY KEY (order_id, product_id)
 );
+
+CREATE TABLE payment (
+    payment_id uuid PRIMARY KEY DEFAULT exts.uuid_generate_v4(),
+    order_id uuid NOT NULL REFERENCES orders (order_id),
+    payment_type payment_type NOT NULL,
+    amount numeric(12,2) NOT NULL,
+    transaction_id uuid NOT NULL UNIQUE,
+    transaction_timestamp timestamp NOT NULL,
+    status payment_status NOT NULL
+);
+
+CREATE UNIQUE INDEX payment_one_success_per_order
+ON payment (order_id) WHERE status = 'успех';
