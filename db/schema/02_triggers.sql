@@ -103,7 +103,7 @@ END;
 $$;
 
 CREATE CONSTRAINT TRIGGER payment_amount_check
-AFTER INSERT OR UPDATE OF order_id, amount ON payment
+AFTER INSERT OR UPDATE OF amount ON payment
 DEFERRABLE INITIALLY DEFERRED
 FOR EACH ROW EXECUTE FUNCTION check_payment_amount();
 
@@ -111,3 +111,36 @@ CREATE CONSTRAINT TRIGGER orders_payment_amount_check
 AFTER UPDATE OF order_amount ON orders
 DEFERRABLE INITIALLY DEFERRED
 FOR EACH ROW EXECUTE FUNCTION check_payment_amount();
+
+CREATE FUNCTION calculate_order_pay_status(checked_order_id uuid)
+RETURNS order_pay_status
+LANGUAGE sql
+SET search_path TO egorov_food, pg_temp
+AS $$
+    SELECT CASE
+        WHEN count(CASE WHEN status = 'успех' THEN 1 END) > 0 THEN 'оплачен'
+        WHEN count(*) = 0
+          OR count(CASE WHEN status = 'в_обработке' THEN 1 END) > 0 THEN 'ожидает'
+        ELSE 'ошибка'
+    END::order_pay_status
+    FROM payment
+    WHERE order_id = checked_order_id;
+$$;
+
+CREATE FUNCTION refresh_order_pay_status()
+RETURNS trigger
+LANGUAGE plpgsql
+SET search_path TO egorov_food, pg_temp
+AS $$
+BEGIN
+    UPDATE orders
+    SET pay_status = calculate_order_pay_status(order_id)
+    WHERE order_id = CASE WHEN TG_OP = 'DELETE' THEN OLD.order_id ELSE NEW.order_id END;
+
+    RETURN NULL;
+END;
+$$;
+
+CREATE TRIGGER payment_pay_status_refresh
+AFTER INSERT OR DELETE OR UPDATE OF status ON payment
+FOR EACH ROW EXECUTE FUNCTION refresh_order_pay_status();

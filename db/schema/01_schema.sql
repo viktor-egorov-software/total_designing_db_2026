@@ -116,7 +116,7 @@ CREATE TABLE orders (
     commission numeric(12,2) GENERATED ALWAYS AS (round(order_amount * 0.1, 2)) STORED NOT NULL,
     total_amount numeric(12,2) GENERATED ALWAYS AS (order_amount + round(order_amount * 0.1, 2)) STORED NOT NULL,
     status order_status NOT NULL,
-    pay_status order_pay_status NOT NULL,
+    pay_status order_pay_status NOT NULL DEFAULT 'ожидает',
     description text NOT NULL,
     FOREIGN KEY (client_id, address_id) REFERENCES client_address (client_id, address_id),
     CHECK (total_amount >= 1000),
