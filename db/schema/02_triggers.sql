@@ -81,6 +81,24 @@ AFTER DELETE OR UPDATE OF order_id ON order_structure
 DEFERRABLE INITIALLY DEFERRED
 FOR EACH ROW EXECUTE FUNCTION check_order_has_items();
 
+CREATE FUNCTION reject_payment_order_change()
+RETURNS trigger
+LANGUAGE plpgsql
+AS $$
+BEGIN
+    IF NEW.order_id <> OLD.order_id THEN
+        RAISE EXCEPTION 'Нельзя изменить заказ попытки оплаты. Создайте новую попытку'
+            USING ERRCODE = '23514';
+    END IF;
+
+    RETURN NEW;
+END;
+$$;
+
+CREATE TRIGGER payment_order_check
+BEFORE UPDATE OF order_id ON payment
+FOR EACH ROW EXECUTE FUNCTION reject_payment_order_change();
+
 CREATE FUNCTION check_payment_amount()
 RETURNS trigger
 LANGUAGE plpgsql
