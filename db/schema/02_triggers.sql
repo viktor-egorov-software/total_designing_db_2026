@@ -150,12 +150,20 @@ RETURNS trigger
 LANGUAGE plpgsql
 SET search_path TO egorov_food, pg_temp
 AS $$
+DECLARE
+    checked_order_id uuid;
 BEGIN
+    IF TG_TABLE_NAME = 'review' THEN
+        checked_order_id := NEW.order_id;
+    ELSE
+        checked_order_id := OLD.order_id;
+    END IF;
+
     IF EXISTS (
         SELECT 1
         FROM review r
         JOIN orders o ON o.order_id = r.order_id
-        WHERE r.order_id = NEW.order_id
+        WHERE r.order_id = checked_order_id
           AND (
               (r.entity_type = 'блюдо' AND NOT EXISTS (
                   SELECT 1
@@ -176,5 +184,10 @@ $$;
 
 CREATE CONSTRAINT TRIGGER review_entity_check
 AFTER INSERT OR UPDATE OF order_id, entity_id, entity_type ON review
+DEFERRABLE INITIALLY DEFERRED
+FOR EACH ROW EXECUTE FUNCTION check_review_entity();
+
+CREATE CONSTRAINT TRIGGER order_structure_review_check
+AFTER DELETE OR UPDATE OF order_id, product_id ON order_structure
 DEFERRABLE INITIALLY DEFERRED
 FOR EACH ROW EXECUTE FUNCTION check_review_entity();
