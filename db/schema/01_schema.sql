@@ -83,3 +83,23 @@ CREATE TABLE product (
     status product_status NOT NULL,
     description text NOT NULL
 );
+
+CREATE TABLE courier (
+    courier_id uuid PRIMARY KEY DEFAULT exts.uuid_generate_v4(),
+    fio varchar(256) NOT NULL,
+    phone_number varchar(32) NOT NULL,
+    status courier_status NOT NULL,
+    hire_date date NOT NULL,
+    dismissal_date date,
+    coefficient numeric NOT NULL DEFAULT 0.1 CHECK (coefficient BETWEEN 0.1 AND 0.5),
+    CHECK (status <> 'уволен' OR dismissal_date IS NOT NULL)
+);
+
+CREATE TABLE courier_pay (
+    year integer,
+    month integer CHECK (month BETWEEN 1 AND 12),
+    courier_id uuid REFERENCES courier (courier_id),
+    amount numeric NOT NULL CHECK (amount >= 0),
+    coefficient_used numeric NOT NULL CHECK (coefficient_used BETWEEN 0.1 AND 0.5),
+    PRIMARY KEY (year, month, courier_id)
+);

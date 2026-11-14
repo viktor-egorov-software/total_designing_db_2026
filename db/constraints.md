@@ -2,7 +2,7 @@
 
 ## Длины строк
 
-По BR-11.6 для логина выбран `varchar(128)`, для названий и улицы —
+По BR-11.6 для логина выбран `varchar(128)`, для названий, ФИО и улицы —
 `varchar(256)`, для телефона, номера дома и квартиры/офиса — `varchar(32)`.
 Номер дома и квартира/офис могут содержать буквы и разделители.
 
@@ -31,6 +31,11 @@
 | `restaurant` | `work_end` | `work_end > work_start` | BR-4.4 | Время закрытия позже времени открытия. |
 | `product` | `price` | `price >= 0` | BR-5.3 | Цена блюда неотрицательна. |
 | `product` | `rating` | `rating BETWEEN 0 AND 5` | BR-5.4 | Рейтинг блюда находится в диапазоне от 0 до 5. |
+| `courier` | `coefficient` | `coefficient BETWEEN 0.1 AND 0.5` | BR-6.4 | Коэффициент курьера находится в диапазоне от 0.1 до 0.5. |
+| `courier` | `status`, `dismissal_date` | `status <> 'уволен' OR dismissal_date IS NOT NULL` | BR-6.3 | У уволенного курьера обязательно указана дата увольнения. |
+| `courier_pay` | `month` | `month BETWEEN 1 AND 12` | BR-10.1, BR-10.2 | Номер месяца выплаты — от 1 до 12. |
+| `courier_pay` | `amount` | `amount >= 0` | BR-10.4 | Сумма выплаты неотрицательна. |
+| `courier_pay` | `coefficient_used` | `coefficient_used BETWEEN 0.1 AND 0.5` | BR-6.4, BR-10.2 | Применённый коэффициент находится в диапазоне от 0.1 до 0.5. |
 
 ## UNIQUE-ограничения
 
@@ -50,6 +55,7 @@
 | `restaurant` | `address_id` | `address(address_id)` | BR-3.3 | Ресторан связан с существующим адресом. |
 | `product` | `product_category_id` | `product_category(product_category_id)` | BR-5.1 | Блюдо принадлежит одной существующей категории; в категории может быть несколько блюд. |
 | `product` | `restaurant_id` | `restaurant(restaurant_id)` | BR-5.1 | Блюдо принадлежит одному существующему ресторану; у ресторана может быть несколько блюд. |
+| `courier_pay` | `courier_id` | `courier(courier_id)` | BR-10.2 | Выплата относится к существующему курьеру; у курьера могут быть выплаты за разные месяцы. |
 
 ## NULL (осознанно разрешено)
 
@@ -59,3 +65,4 @@
 | `restaurant` | `rating` | BR-9.7 | Если отзывов нет, рейтинг ресторана равен `NULL`. |
 | `product` | `photo_url` | BR-5.6 | Фотография блюда необязательна. |
 | `product` | `rating` | BR-9.7 | Если отзывов нет, рейтинг блюда равен `NULL`. |
+| `courier` | `dismissal_date` | BR-6.3 | Дата увольнения необязательна для работающего курьера. |
