@@ -103,3 +103,23 @@ CREATE TABLE courier_pay (
     coefficient_used numeric(2,2) NOT NULL CHECK (coefficient_used BETWEEN 0.1 AND 0.5),
     PRIMARY KEY (year, month, courier_id)
 );
+
+CREATE TABLE orders (
+    order_id uuid PRIMARY KEY DEFAULT exts.uuid_generate_v4(),
+    courier_id uuid NOT NULL REFERENCES courier (courier_id),
+    client_id uuid NOT NULL,
+    address_id uuid NOT NULL,
+    restaurant_id uuid NOT NULL REFERENCES restaurant (restaurant_id),
+    order_timestamp timestamp NOT NULL,
+    delivery_timestamp timestamp,
+    order_amount numeric(12,2) NOT NULL,
+    commission numeric(12,2) GENERATED ALWAYS AS (round(order_amount * 0.1, 2)) STORED NOT NULL,
+    total_amount numeric(12,2) GENERATED ALWAYS AS (order_amount + round(order_amount * 0.1, 2)) STORED NOT NULL,
+    status order_status NOT NULL,
+    pay_status order_pay_status NOT NULL,
+    description text NOT NULL,
+    FOREIGN KEY (client_id, address_id) REFERENCES client_address (client_id, address_id),
+    CHECK (total_amount >= 1000),
+    CHECK (status <> 'доставлен' OR delivery_timestamp IS NOT NULL),
+    CHECK (delivery_timestamp >= order_timestamp)
+);

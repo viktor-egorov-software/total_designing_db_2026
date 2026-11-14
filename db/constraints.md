@@ -8,10 +8,15 @@
 
 ## Точность чисел
 
-По BR-11.6 для цены и суммы выплаты выбран `numeric(12,2)` — до
+По BR-11.6 для цены, суммы выплаты и сумм заказа выбран `numeric(12,2)` — до
 9 999 999 999,99 с точностью до копеек; для рейтингов — `numeric(3,2)`;
 для коэффициентов — `numeric(2,2)`, включая значения вроде `0.15`.
 Лишние дробные знаки округляются до проверки `CHECK`.
+
+## Имена таблиц
+
+Таблица `order` названа `orders`, чтобы не использовать зарезервированное
+слово PostgreSQL (BR-13.1).
 
 ## Enum-типы
 
@@ -43,6 +48,9 @@
 | `courier_pay` | `month` | `month BETWEEN 1 AND 12` | BR-10.1, BR-10.2 | Номер месяца выплаты — от 1 до 12. |
 | `courier_pay` | `amount` | `amount >= 0` | BR-10.4 | Сумма выплаты неотрицательна. |
 | `courier_pay` | `coefficient_used` | `coefficient_used BETWEEN 0.1 AND 0.5` | BR-6.4, BR-10.2 | Применённый коэффициент находится в диапазоне от 0.1 до 0.5. |
+| `orders` | `total_amount` | `total_amount >= 1000` | BR-7.11 | Общая сумма заказа не менее 1000 ₽. |
+| `orders` | `status`, `delivery_timestamp` | `status <> 'доставлен' OR delivery_timestamp IS NOT NULL` | BR-7.12 | У доставленного заказа указано время окончания доставки. |
+| `orders` | `delivery_timestamp`, `order_timestamp` | `delivery_timestamp >= order_timestamp` | BR-7.13 | Доставка заканчивается не раньше создания заказа. |
 
 ## UNIQUE-ограничения
 
@@ -63,6 +71,9 @@
 | `product` | `product_category_id` | `product_category(product_category_id)` | BR-5.1 | Блюдо принадлежит одной существующей категории; в категории может быть несколько блюд. |
 | `product` | `restaurant_id` | `restaurant(restaurant_id)` | BR-5.1 | Блюдо принадлежит одному существующему ресторану; у ресторана может быть несколько блюд. |
 | `courier_pay` | `courier_id` | `courier(courier_id)` | BR-10.2 | Выплата относится к существующему курьеру; у курьера могут быть выплаты за разные месяцы. |
+| `orders` | `courier_id` | `courier(courier_id)` | BR-7.5 | Заказ доставляет существующий курьер. |
+| `orders` | `restaurant_id` | `restaurant(restaurant_id)` | BR-7.2 | Заказ относится к одному существующему ресторану. |
+| `orders` | `client_id`, `address_id` | `client_address(client_id, address_id)` | BR-7.2, BR-7.4 | Составной FK требует, чтобы адрес доставки был привязан к клиенту заказа. |
 
 ## NULL (осознанно разрешено)
 
@@ -73,3 +84,11 @@
 | `product` | `photo_url` | BR-5.6 | Фотография блюда необязательна. |
 | `product` | `rating` | BR-9.7 | Если отзывов нет, рейтинг блюда равен `NULL`. |
 | `courier` | `dismissal_date` | BR-6.3 | Дата увольнения необязательна для работающего курьера. |
+| `orders` | `delivery_timestamp` | BR-7.12 | До завершения доставки время её окончания может отсутствовать. |
+
+## DEFAULT и GENERATED
+
+| Таблица | Столбец | Что | Обоснование                                                                                                     |
+|---|---|---|-----------------------------------------------------------------------------------------------------------------|
+| `orders` | `commission` | `GENERATED ALWAYS AS (round(order_amount * 0.1, 2)) STORED` | BR-1.4, BR-7.10: комиссия — 10% суммы блюд с округлением до копеек.                                             |
+| `orders` | `total_amount` | `GENERATED ALWAYS AS (order_amount + round(order_amount * 0.1, 2)) STORED` | BR-7.10: итог равен сумме блюд и комиссии с округлением до копеек. |
