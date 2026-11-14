@@ -135,7 +135,6 @@ CREATE TABLE payment (
     payment_id uuid PRIMARY KEY DEFAULT exts.uuid_generate_v4(),
     order_id uuid NOT NULL REFERENCES orders (order_id),
     payment_type payment_type NOT NULL,
-    amount numeric(12,2) NOT NULL,
     transaction_id uuid NOT NULL UNIQUE,
     transaction_timestamp timestamp NOT NULL,
     status payment_status NOT NULL
