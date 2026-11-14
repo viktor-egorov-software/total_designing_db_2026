@@ -80,3 +80,34 @@ CREATE CONSTRAINT TRIGGER order_structure_items_check
 AFTER DELETE OR UPDATE OF order_id ON order_structure
 DEFERRABLE INITIALLY DEFERRED
 FOR EACH ROW EXECUTE FUNCTION check_order_has_items();
+
+CREATE FUNCTION check_payment_amount()
+RETURNS trigger
+LANGUAGE plpgsql
+SET search_path TO egorov_food, pg_temp
+AS $$
+BEGIN
+    IF EXISTS (
+        SELECT 1
+        FROM payment p
+        JOIN orders o ON o.order_id = p.order_id
+        WHERE o.order_id = NEW.order_id
+          AND p.amount <> o.total_amount
+    ) THEN
+        RAISE EXCEPTION 'Сумма попытки оплаты должна совпадать с общей суммой заказа'
+            USING ERRCODE = '23514';
+    END IF;
+
+    RETURN NULL;
+END;
+$$;
+
+CREATE CONSTRAINT TRIGGER payment_amount_check
+AFTER INSERT OR UPDATE OF order_id, amount ON payment
+DEFERRABLE INITIALLY DEFERRED
+FOR EACH ROW EXECUTE FUNCTION check_payment_amount();
+
+CREATE CONSTRAINT TRIGGER orders_payment_amount_check
+AFTER UPDATE OF order_amount ON orders
+DEFERRABLE INITIALLY DEFERRED
+FOR EACH ROW EXECUTE FUNCTION check_payment_amount();
