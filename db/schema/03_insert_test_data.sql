@@ -316,15 +316,13 @@ BEGIN
     END LOOP;
 
     -- 8. Отзывы. Перечисляем допустимые пары «заказ — объект», затем выбираем
-    -- до 5 * value без повторов. Недоставленные заказы не участвуют.
-    -- Без минимума доставок точное число отзывов по BR-11.7 не гарантируется:
-    -- если допустимых пар меньше, используем все имеющиеся.
-    -- Клиент определяется через заказ, отдельного client_id в review нет.
+    -- до 5 * value без повторов. Участвуют только доставленные заказы текущего вызова генератора.
     FOR v_review IN
         WITH delivered AS (
             SELECT order_id, restaurant_id, delivery_timestamp FROM orders
             WHERE order_id = ANY(v_orders) AND status = 'доставлен'
         ), candidates AS (
+            -- Отзыв можно оставить на блюдо из заказа, ресторан или сам заказ.
             SELECT d.order_id, d.delivery_timestamp, os.product_id AS entity_id,
                    (enum_range(NULL::review_entity_type))[1] AS entity_type
             FROM delivered d JOIN order_structure os USING (order_id)
@@ -335,18 +333,19 @@ BEGIN
             SELECT order_id, delivery_timestamp, order_id,
                    (enum_range(NULL::review_entity_type))[3] FROM delivered
         )
+        -- Перемешиваем кандидатов и берём не больше 5 * value строк.
         SELECT * FROM candidates ORDER BY random() LIMIT value * 5
     LOOP
         SELECT string_agg(substring(v_cyrillic, floor(random() * 33)::int + 1, 1),
                           '' ORDER BY letter)
         INTO v_description
         FROM generate_series(1, floor(random() * 61)::int + 20) AS letters(letter);
-        -- Случайный момент между доставкой и v_now. При random() = 0
-        -- или округлении timestamp до границы времена могут совпасть.
+        -- Время отзыва — случайный момент между доставкой и v_now.
         INSERT INTO review (review_timestamp, entity_id, entity_type, order_id,
                             description, photo_url, rating)
         VALUES (v_review.delivery_timestamp + random() * (v_now - v_review.delivery_timestamp),
                 v_review.entity_id, v_review.entity_type, v_review.order_id, v_description,
+                -- С вероятностью 50% генерируем ссылку на изображение.
                 CASE WHEN random() < 0.5 THEN NULL
                      ELSE 'https://example.org/review/' || md5(random()::text) || '.jpg' END,
                 floor(random() * 5)::int + 1);
