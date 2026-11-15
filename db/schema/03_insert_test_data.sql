@@ -50,6 +50,7 @@ DECLARE
     v_order_time timestamp;
     v_delivery_time timestamp;
     v_work_start time;
+    v_work_end time;
     v_amount numeric;
     v_quantity numeric;
     v_client_index int;
@@ -169,8 +170,7 @@ BEGIN
 
     -- 5. Рестораны. Используем первые value адресов из блока 1.
     FOR i IN 1..value LOOP
-        -- Три независимых слова: название, описание, реквизиты.
-        -- Длины 5..24 заведомо помещаются в фактические varchar(256).
+        -- Три независимых слова: название, описание, реквизиты, длиной 5..24 символа.
         FOR k IN 1..3 LOOP
             SELECT string_agg(substring(v_cyrillic, floor(random() * 33)::int + 1, 1),
                               '' ORDER BY letter)
@@ -180,10 +180,11 @@ BEGIN
         END LOOP;
         -- Времена зависимы: закрытие всегда позже открытия и до полуночи.
         v_work_start := time '06:00' + floor(random() * 6) * interval '1 hour';
+        v_work_end := v_work_start + interval '10 hours';
         INSERT INTO restaurant (restaurant_name, address_id, description,
                                 work_start, work_end, company_details, status)
         VALUES (v_words[1], v_addresses[i], v_words[2],
-                v_work_start, v_work_start + interval '10 hours', v_words[3],
+                v_work_start, v_work_end, v_words[3],
                 (enum_range(NULL::restaurant_status))[floor(random() * 2)::int + 1])
         RETURNING restaurant_id INTO v_id;
         v_restaurants[i] := v_id;
