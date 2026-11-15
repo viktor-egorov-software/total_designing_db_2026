@@ -371,10 +371,10 @@ BEGIN
           GROUP BY entity_id) r
     WHERE p.restaurant_id = r.entity_id;
 
-    -- 10. История выплат: коэффициент 0.1 в первом месяце, затем из прошлого.
-    -- Сначала выплата и coefficient_used, лишь потом изменение коэффициента.
-    -- Уволенные сегодня участвовали в прошлых расчётах, но после месяца
-    -- увольнения коэффициент больше не меняется (BR-10.6).
+    -- 10. История выплат. Новые курьеры начинают с коэффициентом 0.1.
+    -- Сначала расчет выплаты по коэффициенту по итогам предыдущего месяца,
+    -- а только потом перерасчет коэффициента по итогам текущего.
+    -- Двигаемся от первого месяца по порядку.
     FOR v_month IN SELECT generate_series(v_first_month,
                         date_trunc('month', v_now), interval '1 month') LOOP
         INSERT INTO courier_pay (year, month, courier_id, amount, coefficient_used)
@@ -383,8 +383,8 @@ BEGIN
                round(c.coefficient * coalesce(sum(o.commission), 0), 2),
                c.coefficient
         FROM courier c
-        -- LEFT JOIN сохраняет курьера без доставок; coalesce даёт выплату 0.
-        -- Учитываем комиссии, не полные суммы; созданные и отменённые исключены.
+        -- LEFT JOIN сохраняет курьера без доставок.
+        -- Считаем по комиссиям доставленных заказов.
         LEFT JOIN orders o ON o.courier_id = c.courier_id
             AND o.status = 'доставлен'
             AND o.delivery_timestamp >= v_month
@@ -392,6 +392,8 @@ BEGIN
         WHERE c.courier_id = ANY(v_couriers)
         GROUP BY c.courier_id;
 
+        -- Начиная с месяца увольнения коэффициент не пересчитываем.
+        -- Выплату за этот месяц считаем с прежним коэффициентом.
         UPDATE courier c
         SET coefficient = CASE WHEN s.deliveries > 500 THEN 0.5
                                WHEN s.deliveries > 250 THEN 0.3
