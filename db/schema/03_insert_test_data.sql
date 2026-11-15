@@ -353,27 +353,9 @@ BEGIN
                 floor(random() * 5)::int + 1);
     END LOOP;
 
-    -- 9. Временный расчёт рейтингов по фактическим отзывам (BR-9.6–9.7).
-    -- TODO FOOD-105: после реализации и проверки rating_change удалить эти
-    -- два UPDATE. Триггер будет пересчитывать рейтинги автоматически при INSERT
-    -- отзывов; напрямую вызывать trigger-функцию из генератора не нужно.
-    -- Пока FOOD-105 нет, сохраняем согласованность данных этим блоком.
-    -- Объекты без отзывов остаются с NULL; прежние порции не изменяются.
-    UPDATE product p
-    SET rating = r.rating
-    FROM (SELECT entity_id, avg(rating) AS rating FROM review
-          WHERE entity_type = 'блюдо' AND entity_id = ANY(v_products)
-          GROUP BY entity_id) r
-    WHERE p.product_id = r.entity_id;
+    -- Рейтинги поддерживает триггер rating_change при вставке отзывов.
 
-    UPDATE restaurant p
-    SET rating = r.rating
-    FROM (SELECT entity_id, avg(rating) AS rating FROM review
-          WHERE entity_type = 'ресторан' AND entity_id = ANY(v_restaurants)
-          GROUP BY entity_id) r
-    WHERE p.restaurant_id = r.entity_id;
-
-    -- 10. История выплат. Новые курьеры начинают с коэффициентом 0.1.
+    -- 9. История выплат. Новые курьеры начинают с коэффициентом 0.1.
     -- Сначала расчет выплаты по коэффициенту по итогам предыдущего месяца,
     -- а только потом перерасчет коэффициента по итогам текущего.
     -- Двигаемся от первого месяца по порядку.
