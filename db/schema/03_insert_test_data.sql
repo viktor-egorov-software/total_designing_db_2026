@@ -37,6 +37,9 @@ DECLARE
     v_status order_status;
     v_courier_status courier_status;
     v_other_statuses order_status[];
+    -- Общая переменная для телефонов клиентов и курьеров: при вставке
+    -- добавляем '+' и получаем формат +7 и 10 цифр. Начальный номер случайный,
+    -- далее берём следующий номер с возвратом к началу диапазона.
     v_phone bigint := 70000000000 + floor(random() * 10000000000)::bigint;
 
     v_now timestamp := localtimestamp;
@@ -139,12 +142,17 @@ BEGIN
         v_categories[i] := v_id;
     END LOOP;
 
-    -- 4. Курьеры. ФИО из 5..24 кириллических букв; телефон в формате +7 и 10 цифр.
+    -- 4. Курьеры. ФИО из трёх кириллических слов по 8..20 букв.
+    -- Между словами по одному пробелу: всего два пробела и 26..62 символа.
     FOR i IN 1..value LOOP
-        SELECT string_agg(substring(v_cyrillic, floor(random() * 33)::int + 1, 1),
-                          '' ORDER BY letter)
-        INTO v_fio
-        FROM generate_series(1, floor(random() * 20)::int + 5) AS letters(letter);
+        FOR k IN 1..3 LOOP
+            SELECT string_agg(substring(v_cyrillic, floor(random() * 33)::int + 1, 1),
+                              '' ORDER BY letter)
+            INTO v_description
+            FROM generate_series(1, floor(random() * 13)::int + 8) AS letters(letter);
+            v_words[k] := v_description;
+        END LOOP;
+        v_fio := concat_ws(' ', v_words[1], v_words[2], v_words[3]);
         v_phone := 70000000000 + (v_phone - 70000000000 + 1) % 10000000000;
         -- В enum первые три статуса рабочие, четвёртый — увольнение.
         -- Первый курьер гарантированно работает даже при value = 1 (BR-6.6).
