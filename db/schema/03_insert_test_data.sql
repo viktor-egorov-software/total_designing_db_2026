@@ -46,7 +46,7 @@ DECLARE
     -- Для генерации берем 6 календарных месяцев, включая текущий.
     v_first_month timestamp := date_trunc('month', localtimestamp) - interval '5 months';
     v_month timestamp;
-    v_month_end timestamp;
+    v_delivery_limit timestamp;
     v_order_time timestamp;
     v_delivery_time timestamp;
     v_work_start time;
@@ -54,13 +54,12 @@ DECLARE
     v_amount numeric;
     v_quantity numeric;
     v_client_index int;
+    v_address_index int;
     v_restaurant_index int;
     v_courier_index int;
     v_product_index int;
     v_local_product int;
     v_attempt_count int;
-    v_delivered_count int := 0;
-    v_min_delivered int;
     v_review record;
     i int;
     j int;
@@ -211,14 +210,13 @@ BEGIN
                 FROM generate_series(1, floor(random() * 20)::int + 5) AS letters(letter);
                 v_words[k] := v_description;
             END LOOP;
-            -- Цена 50..1500 рублей, до копейки: не подгоняем под минимум заказа.
-            -- Положительная нижняя граница обеспечивает завершение набора суммы.
-            -- Нулевая цена разрешена схемой, но в этой выборке не генерируется.
-            v_prices[v_product_index] := (5000 + floor(random() * 145001)::int) / 100.0;
+            -- Цена 200..20000 рублей.
+            v_prices[v_product_index] := 200 + floor(random() * 19801)::int;
             INSERT INTO product (product_name, product_category_id, price,
                                  restaurant_id, photo_url, status, description)
             VALUES (v_words[1], v_categories[floor(random() * value)::int + 1],
                     v_prices[v_product_index], v_restaurants[i],
+                    -- У 50 % блюд генерируем ссылку на изображение
                     CASE WHEN random() < 0.5 THEN NULL
                          ELSE 'https://example.org/food/' || md5(random()::text) || '.jpg' END,
                     (enum_range(NULL::product_status))[floor(random() * 3)::int + 1],
@@ -228,64 +226,53 @@ BEGIN
         END LOOP;
     END LOOP;
 
-    -- 7. Заказы и оплаты. Около 70% заказов доставлены; дополнительно гарантируем
-    -- минимум ceil(5 * value / 3) доставленных заказов. У каждого есть хотя бы
-    -- три объекта отзыва: блюдо, ресторан, заказ. Так хватит места для 5 * value
-    -- разных отзывов только после доставки, даже при маленьком value.
-    v_min_delivered := (value * 5 + 2) / 3;
+    -- 7. Заказы и оплаты. 99% заказов доставлены.
     SELECT array_agg(s) INTO v_other_statuses
     FROM unnest(enum_range(NULL::order_status)) AS statuses(s)
     WHERE s <> 'доставлен';
 
     FOR i IN 1..value * 5 LOOP
-        v_client_index := (i - 1) / 5 + 1;
+        -- Для генерации заказа выбираются случайный клиент и один из его четырёх адресов,
+        -- случайные ресторан и курьер.
+        v_client_index := floor(random() * value)::int + 1;
+        v_address_index := value + (v_client_index - 1) * 4
+                           + floor(random() * 4)::int + 1;
         v_restaurant_index := floor(random() * value)::int + 1;
         v_courier_index := floor(random() * value)::int + 1;
-        IF random() < 0.7 OR v_delivered_count + (value * 5 - i + 1) <= v_min_delivered THEN
+        IF random() < 0.99 THEN
             v_status := (enum_range(NULL::order_status))[4];
-            v_delivered_count := v_delivered_count + 1;
         ELSE
             v_status := v_other_statuses[floor(random() * cardinality(v_other_statuses))::int + 1];
         END IF;
+        -- Для незавершенного заказа нельзя назначить уволенного курьера
         IF v_courier_statuses[v_courier_index] = 'уволен'
            AND v_status NOT IN ('доставлен', 'отменён') THEN
             v_courier_index := 1;
         END IF;
 
-        -- Месяцы распределяем по кругу. Оставляем минимум микросекунду до v_now
-        -- для отзыва строго после доставки. Следующий месяц в интервал не входит.
-        v_month := v_first_month + ((i - 1) % 6) * interval '1 month';
-        v_month_end := v_month + interval '1 month' - interval '1 microsecond';
-        IF v_month_end > v_now - interval '1 microsecond' THEN
-            v_month_end := v_now - interval '1 microsecond';
+        -- Создание заказа — случайный момент от начала истории до v_now.
+        v_order_time := v_first_month + random() * (v_now - v_first_month);
+        -- Доставка — в пределах двух часов после создания, но не позже v_now.
+        v_delivery_limit := v_order_time + interval '2 hours';
+        IF v_delivery_limit > v_now THEN
+            v_delivery_limit := v_now;
         END IF;
-        IF v_month_end <= v_month THEN
-            -- В первый момент месяца ещё нет места для исторической доставки.
-            v_month := v_month - interval '1 month';
-            v_month_end := v_month + interval '1 month' - interval '1 microsecond';
-        END IF;
-        v_order_time := v_month + random() * (v_month_end - v_month);
         v_delivery_time := CASE WHEN v_status = 'доставлен'
-            THEN v_order_time + random() * (v_month_end - v_order_time) END;
+            THEN v_order_time + random() * (v_delivery_limit - v_order_time) END;
 
-        -- Количества по индексу блюда внутри ресторана. Новый заказ начинает
-        -- с нулей, включая случай меню из одного блюда.
         v_quantities := ARRAY[]::numeric[];
-        FOR j IN 1..v_product_counts[v_restaurant_index] LOOP
-            v_quantities[j] := 0;
-        END LOOP;
         v_amount := 0;
-        -- Набираем позиции, пока итог с комиссией не достигнет 1000 (BR-7.11).
-        -- Формула округления совпадает с GENERATED-колонками orders.
+        -- Набираем позиции, пока итог с комиссией не достигнет 1000, чтобы набрать минимальную сумму заказа (BR-7.11).
         WHILE round(v_amount, 2) + round(round(v_amount, 2) * 0.1, 2) < 1000 LOOP
             v_local_product := floor(random() * v_product_counts[v_restaurant_index])::int + 1;
             v_product_index := v_product_starts[v_restaurant_index] + v_local_product - 1;
-            v_quantity := (floor(random() * 24)::int + 1) * 0.125;
+            -- Добавляем 1..3 целые единицы.
+            v_quantity := floor(random() * 3)::int + 1;
             -- Повтор блюда увеличивает количество, а не создаёт дубль пары.
-            v_quantities[v_local_product] := v_quantities[v_local_product] + v_quantity;
+            v_quantities[v_local_product] :=
+                coalesce(v_quantities[v_local_product], 0) + v_quantity;
             v_amount := v_amount + v_prices[v_product_index] * v_quantity;
-            -- Каждый проход добавляет >= 50 * 0.125 = 6.25 рубля.
-            -- Поэтому цикл завершится даже при постоянном random() = 0.
+            -- Каждый проход добавляет >= 200 * 1 = 200 рублей.
         END LOOP;
 
         SELECT string_agg(substring(v_cyrillic, floor(random() * 33)::int + 1, 1),
@@ -296,13 +283,15 @@ BEGIN
                             order_timestamp, delivery_timestamp, order_amount,
                             status, description)
         VALUES (v_couriers[v_courier_index], v_clients[v_client_index],
-                v_addresses[value + (v_client_index - 1) * 4 + ((i - 1) % 5) % 4 + 1],
+                v_addresses[v_address_index],
                 v_restaurants[v_restaurant_index], v_order_time, v_delivery_time,
                 round(v_amount, 2), v_status, v_description)
         RETURNING order_id INTO v_order_id;
         v_orders[i] := v_order_id;
 
+        -- Записываем позиции для только что созданного заказа
         FOR j IN 1..v_product_counts[v_restaurant_index] LOOP
+            -- Для невыбранного блюда количество NULL: условие не выполняется.
             IF v_quantities[j] > 0 THEN
                 INSERT INTO order_structure (order_id, product_id, quantity)
                 VALUES (v_order_id, v_products[v_product_starts[v_restaurant_index] + j - 1],
@@ -310,14 +299,9 @@ BEGIN
             END IF;
         END LOOP;
 
-        -- Согласованное с пользователем отступление от BR-11.7:
-        -- успешных платежей ровно 5 * value, ошибки добавляются сверх этого числа.
-        -- На заказ 1..3 попытки; у первого минимум две, чтобы пример ошибок
-        -- присутствовал и при value = 1. Последняя попытка всегда успешна.
+        -- Успешных платежей ровно 5 * value, ошибки добавляются сверх этого числа.
+        -- На заказ случайно 1..3 попытки. Последняя попытка всегда успешна.
         v_attempt_count := floor(random() * 3)::int + 1;
-        IF i = 1 THEN
-            v_attempt_count := floor(random() * 2)::int + 2;
-        END IF;
         FOR j IN 1..v_attempt_count LOOP
             INSERT INTO payment (order_id, payment_type, transaction_id,
                                  transaction_timestamp, status)
@@ -329,13 +313,12 @@ BEGIN
                     (enum_range(NULL::payment_status))[
                         CASE WHEN j = v_attempt_count THEN 1 ELSE 2 END]);
         END LOOP;
-        -- Сумма оплаты определяется через orders.total_amount (модель FOOD-101).
-        -- Статус обновляет payment_pay_status_refresh: сначала ошибка, затем
-        -- оплачен. Отложенная проверка проверит итог в конце транзакции.
     END LOOP;
 
     -- 8. Отзывы. Перечисляем допустимые пары «заказ — объект», затем выбираем
-    -- 5 * value без повторов. Недоставленные заказы не участвуют.
+    -- до 5 * value без повторов. Недоставленные заказы не участвуют.
+    -- Без минимума доставок точное число отзывов по BR-11.7 не гарантируется:
+    -- если допустимых пар меньше, используем все имеющиеся.
     -- Клиент определяется через заказ, отдельного client_id в review нет.
     FOR v_review IN
         WITH delivered AS (
@@ -358,10 +341,11 @@ BEGIN
                           '' ORDER BY letter)
         INTO v_description
         FROM generate_series(1, floor(random() * 61)::int + 20) AS letters(letter);
+        -- Случайный момент между доставкой и v_now. При random() = 0
+        -- или округлении timestamp до границы времена могут совпасть.
         INSERT INTO review (review_timestamp, entity_id, entity_type, order_id,
                             description, photo_url, rating)
-        VALUES (v_review.delivery_timestamp + interval '1 microsecond'
-                + random() * (v_now - v_review.delivery_timestamp - interval '1 microsecond'),
+        VALUES (v_review.delivery_timestamp + random() * (v_now - v_review.delivery_timestamp),
                 v_review.entity_id, v_review.entity_type, v_review.order_id, v_description,
                 CASE WHEN random() < 0.5 THEN NULL
                      ELSE 'https://example.org/review/' || md5(random()::text) || '.jpg' END,
