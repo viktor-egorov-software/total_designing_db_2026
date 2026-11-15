@@ -226,7 +226,9 @@ BEGIN
         END LOOP;
     END LOOP;
 
-    -- 7. Заказы и оплаты. 99% заказов доставлены.
+    -- 7. Заказы и оплаты. Первые ceil(5 * value / 3) заказов обязательно доставлены,
+    -- чтобы покрыть требование о количестве отзывов на любых входных данных.
+    -- Для остальных заказов вероятность доставки — 99%.
     SELECT array_agg(s) INTO v_other_statuses
     FROM unnest(enum_range(NULL::order_status)) AS statuses(s)
     WHERE s <> 'доставлен';
@@ -239,7 +241,7 @@ BEGIN
                            + floor(random() * 4)::int + 1;
         v_restaurant_index := floor(random() * value)::int + 1;
         v_courier_index := floor(random() * value)::int + 1;
-        IF random() < 0.99 THEN
+        IF i <= ceil(value * 5 / 3.0) OR random() < 0.99 THEN
             v_status := (enum_range(NULL::order_status))[4];
         ELSE
             v_status := v_other_statuses[floor(random() * cardinality(v_other_statuses))::int + 1];
@@ -316,7 +318,7 @@ BEGIN
     END LOOP;
 
     -- 8. Отзывы. Перечисляем допустимые пары «заказ — объект», затем выбираем
-    -- до 5 * value без повторов. Участвуют только доставленные заказы текущего вызова генератора.
+    -- ровно 5 * value без повторов. Участвуют только доставленные заказы текущего вызова генератора.
     FOR v_review IN
         WITH delivered AS (
             SELECT order_id, restaurant_id, delivery_timestamp FROM orders
@@ -333,7 +335,7 @@ BEGIN
             SELECT order_id, delivery_timestamp, order_id,
                    (enum_range(NULL::review_entity_type))[3] FROM delivered
         )
-        -- Перемешиваем кандидатов и берём не больше 5 * value строк.
+        -- Перемешиваем кандидатов и берём ровно 5 * value строк.
         SELECT * FROM candidates ORDER BY random() LIMIT value * 5
     LOOP
         SELECT string_agg(substring(v_cyrillic, floor(random() * 33)::int + 1, 1),
