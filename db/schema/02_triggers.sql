@@ -1,11 +1,16 @@
 SET search_path TO egorov_food;
 
-CREATE FUNCTION check_order_structure_restaurant()
+CREATE FUNCTION check_order_item_keys()
 RETURNS trigger
 LANGUAGE plpgsql
 SET search_path TO egorov_food, pg_temp
 AS $$
 BEGIN
+    IF TG_OP = 'UPDATE' AND (NEW.order_id, NEW.product_id) IS DISTINCT FROM (OLD.order_id, OLD.product_id) THEN
+        RAISE EXCEPTION 'Заказ и блюдо существующей позиции менять нельзя. Удалите позицию и добавьте новую'
+            USING ERRCODE = '23514';
+    END IF;
+
     IF EXISTS (
         SELECT 1
         FROM orders o
@@ -21,9 +26,9 @@ BEGIN
 END;
 $$;
 
-CREATE TRIGGER order_structure_restaurant_check
+CREATE TRIGGER order_structure_keys_check
 BEFORE INSERT OR UPDATE OF order_id, product_id ON order_structure
-FOR EACH ROW EXECUTE FUNCTION check_order_structure_restaurant();
+FOR EACH ROW EXECUTE FUNCTION check_order_item_keys();
 
 CREATE FUNCTION reject_restaurant_change()
 RETURNS trigger
@@ -47,23 +52,35 @@ CREATE TRIGGER product_restaurant_check
 BEFORE UPDATE OF restaurant_id ON product
 FOR EACH ROW EXECUTE FUNCTION reject_restaurant_change();
 
-CREATE FUNCTION check_order_has_items()
+CREATE FUNCTION check_order_items()
 RETURNS trigger
 LANGUAGE plpgsql
 SET search_path TO egorov_food, pg_temp
 AS $$
 DECLARE
     checked_order_id uuid;
+    order_amount_before_commission numeric;
+    items_amount numeric;
 BEGIN
-    IF TG_TABLE_NAME = 'orders' THEN
-        checked_order_id := NEW.order_id;
-    ELSE
-        checked_order_id := OLD.order_id;
+    checked_order_id := CASE WHEN TG_OP = 'DELETE' THEN OLD.order_id ELSE NEW.order_id END;
+    SELECT order_amount INTO order_amount_before_commission
+    FROM orders WHERE order_id = checked_order_id;
+    IF NOT FOUND THEN
+        -- Если вместе с позициями удалили сам заказ, проверять его сумму уже не нужно.
+        RETURN NULL;
     END IF;
 
-    IF EXISTS (SELECT 1 FROM orders WHERE order_id = checked_order_id)
-       AND NOT EXISTS (SELECT 1 FROM order_structure WHERE order_id = checked_order_id) THEN
+    SELECT round(sum(os.quantity * p.price), 2) INTO items_amount
+    FROM order_structure os
+    JOIN product p ON p.product_id = os.product_id
+    WHERE os.order_id = checked_order_id;
+
+    IF items_amount IS NULL THEN
         RAISE EXCEPTION 'Заказ должен содержать хотя бы одну позицию'
+            USING ERRCODE = '23514';
+    ELSIF order_amount_before_commission <> items_amount THEN
+        RAISE EXCEPTION 'Сумма заказа % указана как %, стоимость позиций %',
+            checked_order_id, order_amount_before_commission, items_amount
             USING ERRCODE = '23514';
     END IF;
 
@@ -72,14 +89,14 @@ END;
 $$;
 
 CREATE CONSTRAINT TRIGGER orders_items_check
-AFTER INSERT OR UPDATE OF order_id ON orders
+AFTER INSERT OR UPDATE OF order_id, order_amount ON orders
 DEFERRABLE INITIALLY DEFERRED
-FOR EACH ROW EXECUTE FUNCTION check_order_has_items();
+FOR EACH ROW EXECUTE FUNCTION check_order_items();
 
 CREATE CONSTRAINT TRIGGER order_structure_items_check
-AFTER DELETE OR UPDATE OF order_id ON order_structure
+AFTER INSERT OR UPDATE OR DELETE ON order_structure
 DEFERRABLE INITIALLY DEFERRED
-FOR EACH ROW EXECUTE FUNCTION check_order_has_items();
+FOR EACH ROW EXECUTE FUNCTION check_order_items();
 
 CREATE FUNCTION reject_payment_order_change()
 RETURNS trigger
@@ -200,6 +217,6 @@ DEFERRABLE INITIALLY DEFERRED
 FOR EACH ROW EXECUTE FUNCTION check_review_entity();
 
 CREATE CONSTRAINT TRIGGER order_structure_review_check
-AFTER DELETE OR UPDATE OF order_id, product_id ON order_structure
+AFTER DELETE ON order_structure
 DEFERRABLE INITIALLY DEFERRED
 FOR EACH ROW EXECUTE FUNCTION check_review_entity();
