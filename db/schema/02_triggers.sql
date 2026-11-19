@@ -122,13 +122,12 @@ LANGUAGE sql
 SET search_path TO egorov_food, pg_temp
 AS $$
     SELECT CASE
-        WHEN count(CASE WHEN status = 'успех' THEN 1 END) > 0 THEN 'оплачен'
-        WHEN count(*) = 0
-          OR count(CASE WHEN status = 'в_обработке' THEN 1 END) > 0 THEN 'ожидает'
-        ELSE 'ошибка'
-    END::order_pay_status
-    FROM payment
-    WHERE order_id = checked_order_id;
+        WHEN EXISTS (SELECT 1 FROM payment WHERE order_id = checked_order_id AND status = 'успех')
+            THEN 'оплачен'
+        WHEN (SELECT bool_and(status = 'ошибка') FROM payment WHERE order_id = checked_order_id)
+            THEN 'ошибка'
+        ELSE 'ожидает'
+    END::order_pay_status;
 $$;
 
 CREATE FUNCTION check_order_pay_status()
@@ -141,6 +140,8 @@ BEGIN
         SELECT 1
         FROM orders
         WHERE order_id = NEW.order_id
+          -- При COMMIT сверяем платежи, только если статус из события совпадает с текущим статусом заказа.
+          AND pay_status = NEW.pay_status
           AND pay_status <> calculate_order_pay_status(order_id)
     ) THEN
         RAISE EXCEPTION 'Статус оплаты заказа должен соответствовать попыткам оплаты'
@@ -163,7 +164,10 @@ SET search_path TO egorov_food, pg_temp
 AS $$
 BEGIN
     UPDATE orders
-    SET pay_status = calculate_order_pay_status(order_id)
+    SET pay_status = CASE
+        WHEN TG_OP <> 'DELETE' AND NEW.status = 'успех' THEN 'оплачен'::order_pay_status
+        ELSE calculate_order_pay_status(order_id)
+    END
     WHERE order_id = CASE WHEN TG_OP = 'DELETE' THEN OLD.order_id ELSE NEW.order_id END;
 
     RETURN NULL;
