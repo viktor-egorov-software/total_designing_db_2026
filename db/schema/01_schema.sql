@@ -62,7 +62,9 @@ CREATE TABLE restaurant (
     description text NOT NULL,
     work_start time NOT NULL,
     work_end time NOT NULL CHECK (work_end > work_start),
-    company_details text NOT NULL,
+    inn varchar(12) NOT NULL,
+    ogrn varchar(15) NOT NULL,
+    bank_account varchar(20) NOT NULL,
     rating numeric(3,2) CHECK (rating BETWEEN 0 AND 5),
     status restaurant_status NOT NULL
 );
@@ -86,7 +88,9 @@ CREATE TABLE product (
 
 CREATE TABLE courier (
     courier_id uuid PRIMARY KEY DEFAULT exts.uuid_generate_v4(),
-    fio varchar(256) NOT NULL,
+    last_name varchar(100) NOT NULL,
+    first_name varchar(100) NOT NULL,
+    middle_name varchar(100),
     phone_number varchar(32) NOT NULL,
     status courier_status NOT NULL,
     hire_date date NOT NULL,

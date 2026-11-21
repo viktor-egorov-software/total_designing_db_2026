@@ -31,7 +31,6 @@ DECLARE
     v_apartment text;
     v_description text;
     v_category_name text;
-    v_fio text;
     v_id uuid;
     v_order_id uuid;
     v_status order_status;
@@ -143,7 +142,6 @@ BEGIN
     END LOOP;
 
     -- 4. Курьеры. ФИО из трёх кириллических слов по 8..20 букв.
-    -- Между словами по одному пробелу: всего два пробела и 26..62 символа.
     FOR i IN 1..value LOOP
         FOR k IN 1..3 LOOP
             SELECT string_agg(substring(v_cyrillic, floor(random() * 33)::int + 1, 1),
@@ -152,14 +150,13 @@ BEGIN
             FROM generate_series(1, floor(random() * 13)::int + 8) AS letters(letter);
             v_words[k] := v_description;
         END LOOP;
-        v_fio := concat_ws(' ', v_words[1], v_words[2], v_words[3]);
         v_phone := 70000000000 + (v_phone - 70000000000 + 1) % 10000000000;
         -- В enum первые три статуса рабочие, четвёртый — увольнение.
         -- Первый курьер гарантированно работает даже при value = 1 (BR-6.6).
         v_courier_status := (enum_range(NULL::courier_status))[
             floor(random() * CASE WHEN i = 1 THEN 3 ELSE 4 END)::int + 1];
-        INSERT INTO courier (fio, phone_number, status, hire_date, dismissal_date)
-        VALUES (v_fio, '+' || v_phone::text, v_courier_status,
+        INSERT INTO courier (last_name, first_name, middle_name, phone_number, status, hire_date, dismissal_date)
+        VALUES (v_words[1], v_words[2], v_words[3], '+' || v_phone::text, v_courier_status,
                 v_first_month::date,
                 CASE WHEN v_courier_status = 'уволен' THEN v_now::date END)
         RETURNING courier_id INTO v_id;
@@ -169,8 +166,7 @@ BEGIN
 
     -- 5. Рестораны. Используем первые value адресов из блока 1.
     FOR i IN 1..value LOOP
-        -- Три независимых слова: название, описание, реквизиты, длиной 5..24 символа.
-        FOR k IN 1..3 LOOP
+        FOR k IN 1..2 LOOP
             SELECT string_agg(substring(v_cyrillic, floor(random() * 33)::int + 1, 1),
                               '' ORDER BY letter)
             INTO v_description
@@ -181,9 +177,10 @@ BEGIN
         v_work_start := time '06:00' + floor(random() * 6) * interval '1 hour';
         v_work_end := v_work_start + interval '10 hours';
         INSERT INTO restaurant (restaurant_name, address_id, description,
-                                work_start, work_end, company_details, status)
+                                work_start, work_end, inn, ogrn, bank_account, status)
         VALUES (v_words[1], v_addresses[i], v_words[2],
-                v_work_start, v_work_end, v_words[3],
+                v_work_start, v_work_end, lpad(i::text, 10, '0'), lpad(i::text, 13, '0'),
+                lpad(i::text, 20, '0'),
                 (enum_range(NULL::restaurant_status))[floor(random() * 2)::int + 1])
         RETURNING restaurant_id INTO v_id;
         v_restaurants[i] := v_id;
