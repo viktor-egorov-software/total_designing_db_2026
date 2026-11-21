@@ -110,7 +110,7 @@ CREATE TABLE courier_pay (
 
 CREATE TABLE orders (
     order_id uuid PRIMARY KEY DEFAULT exts.uuid_generate_v4(),
-    courier_id uuid NOT NULL REFERENCES courier (courier_id),
+    courier_id uuid REFERENCES courier (courier_id),
     client_id uuid NOT NULL,
     address_id uuid NOT NULL,
     restaurant_id uuid NOT NULL REFERENCES restaurant (restaurant_id),
@@ -121,9 +121,10 @@ CREATE TABLE orders (
     total_amount numeric(8,2) GENERATED ALWAYS AS (order_amount + round(order_amount * 0.1, 2)) STORED NOT NULL,
     status order_status NOT NULL,
     pay_status order_pay_status NOT NULL DEFAULT 'ожидает',
-    description text NOT NULL,
+    description text,
     FOREIGN KEY (client_id, address_id) REFERENCES client_address (client_id, address_id),
     CHECK (total_amount >= 1000),
+    CHECK (status NOT IN ('в_доставке', 'доставлен') OR courier_id IS NOT NULL),
     CHECK (status <> 'доставлен' OR delivery_timestamp IS NOT NULL),
     CHECK (delivery_timestamp >= order_timestamp)
 );
