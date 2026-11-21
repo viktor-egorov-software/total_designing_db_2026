@@ -78,7 +78,7 @@ CREATE TABLE product (
     product_id uuid PRIMARY KEY DEFAULT exts.uuid_generate_v4(),
     product_name varchar(256) NOT NULL,
     product_category_id uuid NOT NULL REFERENCES product_category (product_category_id),
-    price numeric(12,2) NOT NULL CHECK (price >= 0),
+    price numeric(7,2) NOT NULL CHECK (price >= 0),
     restaurant_id uuid NOT NULL REFERENCES restaurant (restaurant_id),
     photo_url text,
     rating numeric(3,2) CHECK (rating BETWEEN 0 AND 5),
@@ -103,7 +103,7 @@ CREATE TABLE courier_pay (
     year smallint,
     month smallint CHECK (month BETWEEN 1 AND 12),
     courier_id uuid REFERENCES courier (courier_id),
-    amount numeric(12,2) NOT NULL CHECK (amount >= 0),
+    amount numeric(8,2) NOT NULL CHECK (amount >= 0),
     coefficient_used numeric(2,2) NOT NULL CHECK (coefficient_used BETWEEN 0.1 AND 0.5),
     PRIMARY KEY (year, month, courier_id)
 );
@@ -116,9 +116,9 @@ CREATE TABLE orders (
     restaurant_id uuid NOT NULL REFERENCES restaurant (restaurant_id),
     order_timestamp timestamp NOT NULL,
     delivery_timestamp timestamp,
-    order_amount numeric(12,2) NOT NULL,
-    commission numeric(12,2) GENERATED ALWAYS AS (round(order_amount * 0.1, 2)) STORED NOT NULL,
-    total_amount numeric(12,2) GENERATED ALWAYS AS (order_amount + round(order_amount * 0.1, 2)) STORED NOT NULL,
+    order_amount numeric(7,2) NOT NULL,
+    commission numeric(7,2) GENERATED ALWAYS AS (round(order_amount * 0.1, 2)) STORED NOT NULL,
+    total_amount numeric(8,2) GENERATED ALWAYS AS (order_amount + round(order_amount * 0.1, 2)) STORED NOT NULL,
     status order_status NOT NULL,
     pay_status order_pay_status NOT NULL DEFAULT 'ожидает',
     description text NOT NULL,
@@ -131,7 +131,7 @@ CREATE TABLE orders (
 CREATE TABLE order_structure (
     order_id uuid REFERENCES orders (order_id),
     product_id uuid REFERENCES product (product_id),
-    quantity numeric(8,3) NOT NULL CHECK (quantity > 0),
+    quantity numeric(5,3) NOT NULL CHECK (quantity > 0),
     PRIMARY KEY (order_id, product_id)
 );
 

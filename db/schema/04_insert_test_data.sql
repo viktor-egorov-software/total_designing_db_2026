@@ -207,8 +207,8 @@ BEGIN
                 FROM generate_series(1, floor(random() * 20)::int + 5) AS letters(letter);
                 v_words[k] := v_description;
             END LOOP;
-            -- Цена 200..20000 рублей.
-            v_prices[v_product_index] := 200 + floor(random() * 19801)::int;
+            -- Цена 200..3000 рублей.
+            v_prices[v_product_index] := 200 + floor(random() * 2801)::int;
             INSERT INTO product (product_name, product_category_id, price,
                                  restaurant_id, photo_url, status, description)
             VALUES (v_words[1], v_categories[floor(random() * value)::int + 1],
