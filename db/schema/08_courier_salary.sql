@@ -7,9 +7,11 @@ DECLARE
     v_year smallint := extract(year FROM v_month)::smallint;
     v_month_number smallint := extract(month FROM v_month)::smallint;
     v_salary record;
+    v_amount numeric;
 BEGIN
     FOR v_salary IN
         SELECT c.courier_id, c.status,
+               p.coefficient_used IS NOT NULL AS payment_exists,
                coalesce(p.coefficient_used, c.coefficient) AS coefficient_used,
                count(o.order_id) AS deliveries,
                coalesce(sum(o.commission), 0) AS commission
@@ -21,17 +23,20 @@ BEGIN
             AND o.status = 'доставлен'
             AND o.delivery_timestamp >= v_month
             AND o.delivery_timestamp < v_month + interval '1 month'
+        WHERE c.hire_date < v_month + interval '1 month'
+          AND (c.status <> 'уволен' OR c.dismissal_date >= v_month)
         GROUP BY c.courier_id, p.coefficient_used
     LOOP
-        INSERT INTO courier_pay (year, month, courier_id, amount, coefficient_used)
-        VALUES (v_year, v_month_number, v_salary.courier_id,
-                round(v_salary.coefficient_used * v_salary.commission, 2),
-                v_salary.coefficient_used)
-        -- При повторном расчете обновляем поле amount в существующей записи
-        ON CONFLICT (year, month, courier_id) DO UPDATE
-        SET amount = EXCLUDED.amount;
-        -- При повторном расчёте coefficient_used сохраняется: в courier
-        -- уже может находиться коэффициент, назначенный на следующий месяц.
+        v_amount := round(v_salary.coefficient_used * v_salary.commission, 2);
+        IF v_salary.payment_exists THEN
+            UPDATE courier_pay
+            SET amount = v_amount
+            WHERE year = v_year AND month = v_month_number
+              AND courier_id = v_salary.courier_id;
+        ELSE
+            INSERT INTO courier_pay (year, month, courier_id, amount, coefficient_used)
+            VALUES (v_year, v_month_number, v_salary.courier_id, v_amount, v_salary.coefficient_used);
+        END IF;
 
         IF v_salary.status <> 'уволен' THEN
             UPDATE courier
