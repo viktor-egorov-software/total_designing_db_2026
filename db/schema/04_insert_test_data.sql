@@ -36,6 +36,7 @@ DECLARE
     v_status order_status;
     v_courier_status courier_status;
     v_other_statuses order_status[];
+    v_payment_statuses payment_status[] := enum_range(NULL::payment_status);
     -- Общая переменная для телефонов клиентов и курьеров: при вставке
     -- добавляем '+' и получаем формат +7 и 10 цифр. Начальный номер случайный,
     -- далее берём следующий номер с возвратом к началу диапазона.
@@ -58,7 +59,8 @@ DECLARE
     v_courier_index int;
     v_product_index int;
     v_local_product int;
-    v_attempt_count int;
+    v_delivered_count int;
+    v_payment_status payment_status;
     v_review record;
     i int;
     j int;
@@ -223,12 +225,9 @@ BEGIN
         END LOOP;
     END LOOP;
 
-    -- 7. Заказы и оплаты. Первые ceil(5 * value / 3) заказов обязательно доставлены,
-    -- чтобы покрыть требование о количестве отзывов на любых входных данных.
-    -- Для остальных заказов вероятность доставки — 99%.
-    SELECT array_agg(s) INTO v_other_statuses
-    FROM unnest(enum_range(NULL::order_status)) AS statuses(s)
-    WHERE s <> 'доставлен';
+    -- 7. Заказы и оплаты. Один доставленный заказ даёт минимум три объекта для отзывов.
+    v_delivered_count := ceil(value * 5 / 3.0);
+    v_other_statuses := array_remove(enum_range(NULL::order_status), 'доставлен'::order_status);
 
     FOR i IN 1..value * 5 LOOP
         -- Для генерации заказа выбираются случайный клиент и один из его четырёх адресов,
@@ -238,9 +237,11 @@ BEGIN
                            + floor(random() * 4)::int + 1;
         v_restaurant_index := floor(random() * value)::int + 1;
         v_courier_index := floor(random() * value)::int + 1;
-        IF i <= ceil(value * 5 / 3.0) OR random() < 0.99 THEN
-            v_status := (enum_range(NULL::order_status))[4];
+        IF i <= v_delivered_count THEN
+            v_payment_status := 'успех';
+            v_status := 'доставлен';
         ELSE
+            v_payment_status := v_payment_statuses[floor(random() * cardinality(v_payment_statuses))::int + 1];
             v_status := v_other_statuses[floor(random() * cardinality(v_other_statuses))::int + 1];
         END IF;
         -- Для незавершенного заказа нельзя назначить уволенного курьера
@@ -298,20 +299,13 @@ BEGIN
             END IF;
         END LOOP;
 
-        -- Успешных платежей ровно 5 * value, ошибки добавляются сверх этого числа.
-        -- На заказ случайно 1..3 попытки. Последняя попытка всегда успешна.
-        v_attempt_count := floor(random() * 3)::int + 1;
-        FOR j IN 1..v_attempt_count LOOP
-            INSERT INTO payment (order_id, payment_type, transaction_id,
-                                 transaction_timestamp, status)
-            VALUES (v_order_id,
-                    (enum_range(NULL::payment_type))[floor(random() * 3)::int + 1],
-                    exts.uuid_generate_v4(),
-                    v_order_time + (coalesce(v_delivery_time, v_now) - v_order_time)
-                                   * (j::double precision / (v_attempt_count + 1)),
-                    (enum_range(NULL::payment_status))[
-                        CASE WHEN j = v_attempt_count THEN 1 ELSE 2 END]);
-        END LOOP;
+        INSERT INTO payment (order_id, payment_type, transaction_id,
+                             transaction_timestamp, status)
+        VALUES (v_order_id,
+                (enum_range(NULL::payment_type))[floor(random() * 3)::int + 1],
+                exts.uuid_generate_v4(),
+                v_order_time + random() * (coalesce(v_delivery_time, v_now) - v_order_time),
+                v_payment_status);
     END LOOP;
 
     -- 8. Отзывы. Перечисляем допустимые пары «заказ — объект», затем выбираем
