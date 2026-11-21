@@ -28,7 +28,7 @@ AS $$
         GROUP BY o.restaurant_id, os.product_id
     ), best_products AS (
         SELECT restaurant_id,
-               (array_agg(product_id ORDER BY quantity DESC, random()))[1] AS product_id
+               (array_agg(product_id ORDER BY quantity DESC))[1] AS product_id
         FROM product_quantities
         GROUP BY restaurant_id
     ), client_orders AS (
@@ -37,9 +37,8 @@ AS $$
         FROM delivered_orders
         GROUP BY restaurant_id, client_id
     ), best_clients AS (
-        -- random() выбирает победителя только среди равных по основному показателю.
         SELECT restaurant_id,
-               (array_agg(client_id ORDER BY order_count DESC, random()))[1] AS client_id
+               (array_agg(client_id ORDER BY order_count DESC))[1] AS client_id
         FROM client_orders
         GROUP BY restaurant_id
     )
