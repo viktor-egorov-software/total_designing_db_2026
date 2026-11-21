@@ -36,7 +36,7 @@ CREATE TYPE review_entity_type AS ENUM (
 
 CREATE TABLE client (
     client_id uuid PRIMARY KEY DEFAULT exts.uuid_generate_v4(),
-    login varchar(128) NOT NULL UNIQUE,
+    login varchar(32) NOT NULL UNIQUE,
     password varchar(32) NOT NULL CHECK (password ~ '^[0-9a-fA-F]{32}$'),
     phone_number varchar(32) NOT NULL UNIQUE
 );

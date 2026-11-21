@@ -1,3 +1,13 @@
+-- Длина равномерно выбирается между 1 и max_length включительно.
+CREATE OR REPLACE FUNCTION egorov_food.test_string(alphabet text, max_length int)
+RETURNS text
+LANGUAGE sql VOLATILE STRICT
+AS $$
+    -- floor(random() * N) + 1 даёт 1..N даже при random() = 0.
+    SELECT string_agg(substr(alphabet, 1 + floor(random() * length(alphabet))::int, 1), '')
+    FROM generate_series(1, 1 + floor(random() * max_length)::int);
+$$;
+
 CREATE OR REPLACE PROCEDURE egorov_food.insert_test_data(value int)
 LANGUAGE plpgsql
 SET search_path TO egorov_food, pg_temp
@@ -19,15 +29,19 @@ DECLARE
     -- Количество блюд в ресторане.
     v_product_counts int[];
     v_quantities numeric[];
-    v_words text[];
+    v_last_name text;
+    v_first_name text;
+    v_middle_name text;
+    v_restaurant_name text;
+    v_restaurant_description text;
+    v_product_name text;
+    v_product_description text;
     v_cyrillic text := 'абвгдеёжзийклмнопрстуфхцчшщъыьэюя';
     v_latin text := 'abcdefghijklmnopqrstuvwxyz';
-    v_login_base text;
-    v_login_suffix text;
-    v_login_attempt int;
-    v_suffix_number int;
+    v_login text;
+    v_digits text := '0123456789';
     v_street text;
-    v_house bigint;
+    v_house text;
     v_apartment text;
     v_description text;
     v_category_name text;
@@ -37,10 +51,7 @@ DECLARE
     v_courier_status courier_status;
     v_other_statuses order_status[];
     v_payment_statuses payment_status[] := enum_range(NULL::payment_status);
-    -- Общая переменная для телефонов клиентов и курьеров: при вставке
-    -- добавляем '+' и получаем формат +7 и 10 цифр. Начальный номер случайный,
-    -- далее берём следующий номер с возвратом к началу диапазона.
-    v_phone bigint := 70000000000 + floor(random() * 10000000000)::bigint;
+    v_phone text;
 
     v_now timestamp := localtimestamp;
     -- Для генерации берем 6 календарных месяцев, включая текущий.
@@ -64,64 +75,42 @@ DECLARE
     v_review record;
     i int;
     j int;
-    k int;
 BEGIN
     IF value IS NULL OR value <= 0 THEN
         RAISE EXCEPTION 'value должен быть положительным целым числом'
             USING ERRCODE = '22023';
     END IF;
 
+    -- UUID новых записей создаются через DEFAULT exts.uuid_generate_v4().
     -- 1. Адреса: первые value — ресторанам, остальные 4 * value — клиентам.
-    -- Строки для названий улиц собираем из случайных букв кириллического алфавита, длина от 8 до 32 символов.
-    -- floor(random() * N) + 1 даёт 1..N даже при random() = 0.
-    -- Номер квартиры оставляем NULL с вероятностью 15%.
     FOR i IN 1..value * 5 LOOP
-        SELECT string_agg(substring(v_cyrillic, floor(random() * 33)::int + 1, 1),
-                          '' ORDER BY letter)
-        INTO v_street
-        FROM generate_series(1, floor(random() * 25)::int + 8) AS letters(letter);
-        v_house := floor(random() * 200)::int + 1;
-        v_apartment := CASE WHEN random() < 0.15 THEN NULL
-                           ELSE (floor(random() * 100)::int + 1)::text END;
+        -- Номер квартиры оставляем NULL с вероятностью 15%.
+        v_apartment := CASE WHEN random() >= 0.15 THEN test_string(v_digits, 32) END;
+        -- При совпадении адреса повторяем вставку с новыми улицей и домом.
         LOOP
+            v_street := test_string(v_cyrillic, 256);
+            v_house := test_string(v_digits, 32);
             INSERT INTO address (street, house_number, apartment_office)
-            VALUES (v_street, v_house::text, v_apartment)
+            VALUES (v_street, v_house, v_apartment)
             ON CONFLICT DO NOTHING
             RETURNING address_id INTO v_id;
             EXIT WHEN v_id IS NOT NULL;
-            -- При коллизии адреса инкрементируем номер дома и пробуем снова.
-            v_house := v_house + 1;
         END LOOP;
         v_addresses[i] := v_id;
     END LOOP;
 
     -- 2. Клиенты и их связи с адресами.
-    -- ID новых сущностей генерируются через DEFAULT exts.uuid_generate_v4().
-    -- При коллизии любого уникального поля происходит еще одна попытка вставки и так до успеха.
-    -- Строки для логина собираем из случайных букв латинского алфавита, длина основы от 8 до 20 символов.
-    -- При коллизии к основе добавляем буквенный суффикс a..z, aa..az и далее.
-    -- Телефон меняем на следующий в диапазоне; пароль и ID генерируем заново.
     FOR i IN 1..value LOOP
-        SELECT string_agg(substring(v_latin, floor(random() * 26)::int + 1, 1),
-                          '' ORDER BY letter)
-        INTO v_login_base
-        FROM generate_series(1, floor(random() * 13)::int + 8) AS letters(letter);
-        v_login_attempt := 0;
+        -- При конфликте логина или телефона RETURNING не возвращает строку.
+        -- v_id становится NULL, и цикл генерирует новую пару для вставки.
         LOOP
-            v_login_suffix := '';
-            v_suffix_number := v_login_attempt;
-            WHILE v_suffix_number > 0 LOOP
-                v_login_suffix := substring(v_latin, (v_suffix_number - 1) % 26 + 1, 1)
-                                  || v_login_suffix;
-                v_suffix_number := (v_suffix_number - 1) / 26;
-            END LOOP;
-            v_phone := 70000000000 + (v_phone - 70000000000 + 1) % 10000000000;
+            v_login := test_string(v_latin, 32);
+            v_phone := test_string(v_digits, 32);
             INSERT INTO client (login, password, phone_number)
-            VALUES (v_login_base || v_login_suffix, md5(random()::text), '+' || v_phone::text)
+            VALUES (v_login, md5(random()::text), v_phone)
             ON CONFLICT DO NOTHING
             RETURNING client_id INTO v_id;
             EXIT WHEN v_id IS NOT NULL;
-            v_login_attempt := v_login_attempt + 1;
         END LOOP;
         v_clients[i] := v_id;
 
@@ -132,33 +121,26 @@ BEGIN
         END LOOP;
     END LOOP;
 
-    -- 3. Категории блюд. Название из 5..24 кириллических букв.
+    -- 3. Категории блюд.
     FOR i IN 1..value LOOP
-        SELECT string_agg(substring(v_cyrillic, floor(random() * 33)::int + 1, 1),
-                          '' ORDER BY letter)
-        INTO v_category_name
-        FROM generate_series(1, floor(random() * 20)::int + 5) AS letters(letter);
+        v_category_name := test_string(v_cyrillic, 256);
         INSERT INTO product_category (product_category_name)
         VALUES (v_category_name) RETURNING product_category_id INTO v_id;
         v_categories[i] := v_id;
     END LOOP;
 
-    -- 4. Курьеры. ФИО из трёх кириллических слов по 8..20 букв.
+    -- 4. Курьеры.
     FOR i IN 1..value LOOP
-        FOR k IN 1..3 LOOP
-            SELECT string_agg(substring(v_cyrillic, floor(random() * 33)::int + 1, 1),
-                              '' ORDER BY letter)
-            INTO v_description
-            FROM generate_series(1, floor(random() * 13)::int + 8) AS letters(letter);
-            v_words[k] := v_description;
-        END LOOP;
-        v_phone := 70000000000 + (v_phone - 70000000000 + 1) % 10000000000;
+        v_last_name := test_string(v_cyrillic, 100);
+        v_first_name := test_string(v_cyrillic, 100);
+        v_middle_name := test_string(v_cyrillic, 100);
+        v_phone := test_string(v_digits, 32);
         -- В enum первые три статуса рабочие, четвёртый — увольнение.
         -- Первый курьер гарантированно работает даже при value = 1 (BR-6.6).
         v_courier_status := (enum_range(NULL::courier_status))[
             floor(random() * CASE WHEN i = 1 THEN 3 ELSE 4 END)::int + 1];
         INSERT INTO courier (last_name, first_name, middle_name, phone_number, status, hire_date, dismissal_date)
-        VALUES (v_words[1], v_words[2], v_words[3], '+' || v_phone::text, v_courier_status,
+        VALUES (v_last_name, v_first_name, v_middle_name, v_phone, v_courier_status,
                 v_first_month::date,
                 CASE WHEN v_courier_status = 'уволен' THEN v_now::date END)
         RETURNING courier_id INTO v_id;
@@ -168,21 +150,16 @@ BEGIN
 
     -- 5. Рестораны. Используем первые value адресов из блока 1.
     FOR i IN 1..value LOOP
-        FOR k IN 1..2 LOOP
-            SELECT string_agg(substring(v_cyrillic, floor(random() * 33)::int + 1, 1),
-                              '' ORDER BY letter)
-            INTO v_description
-            FROM generate_series(1, floor(random() * 20)::int + 5) AS letters(letter);
-            v_words[k] := v_description;
-        END LOOP;
+        v_restaurant_name := test_string(v_cyrillic, 256);
+        v_restaurant_description := test_string(v_cyrillic, 24);
         -- Времена зависимы: закрытие всегда позже открытия и до полуночи.
         v_work_start := time '06:00' + floor(random() * 6) * interval '1 hour';
         v_work_end := v_work_start + interval '10 hours';
         INSERT INTO restaurant (restaurant_name, address_id, description,
                                 work_start, work_end, inn, ogrn, bank_account, status)
-        VALUES (v_words[1], v_addresses[i], v_words[2],
-                v_work_start, v_work_end, lpad(i::text, 10, '0'), lpad(i::text, 13, '0'),
-                lpad(i::text, 20, '0'),
+        VALUES (v_restaurant_name, v_addresses[i], v_restaurant_description,
+                v_work_start, v_work_end, test_string(v_digits, 12), test_string(v_digits, 15),
+                test_string(v_digits, 20),
                 (enum_range(NULL::restaurant_status))[floor(random() * 2)::int + 1])
         RETURNING restaurant_id INTO v_id;
         v_restaurants[i] := v_id;
@@ -202,24 +179,19 @@ BEGIN
         v_product_starts[i] := v_product_index + 1;
         FOR j IN 1..v_product_counts[i] LOOP
             v_product_index := v_product_index + 1;
-            FOR k IN 1..2 LOOP
-                SELECT string_agg(substring(v_cyrillic, floor(random() * 33)::int + 1, 1),
-                                  '' ORDER BY letter)
-                INTO v_description
-                FROM generate_series(1, floor(random() * 20)::int + 5) AS letters(letter);
-                v_words[k] := v_description;
-            END LOOP;
+            v_product_name := test_string(v_cyrillic, 256);
+            v_product_description := test_string(v_cyrillic, 24);
             -- Цена 200..3000 рублей.
             v_prices[v_product_index] := 200 + floor(random() * 2801)::int;
             INSERT INTO product (product_name, product_category_id, price,
                                  restaurant_id, photo_url, status, description)
-            VALUES (v_words[1], v_categories[floor(random() * value)::int + 1],
+            VALUES (v_product_name, v_categories[floor(random() * value)::int + 1],
                     v_prices[v_product_index], v_restaurants[i],
                     -- У 50 % блюд генерируем ссылку на изображение
                     CASE WHEN random() < 0.5 THEN NULL
                          ELSE 'https://example.org/food/' || md5(random()::text) || '.jpg' END,
                     (enum_range(NULL::product_status))[floor(random() * 3)::int + 1],
-                    v_words[2])
+                    v_product_description)
             RETURNING product_id INTO v_id;
             v_products[v_product_index] := v_id;
         END LOOP;
