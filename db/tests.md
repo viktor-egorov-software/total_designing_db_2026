@@ -347,105 +347,112 @@ END $$;
 ```sql
 SELECT 'order_structure → order' AS fk, count(*) AS orphans
 FROM order_structure os
-LEFT JOIN "order" o ON os.order_id = o.order_id
+         LEFT JOIN "orders" o ON os.order_id = o.order_id
 WHERE o.order_id IS NULL
 UNION ALL
 SELECT 'order_structure → product', count(*)
 FROM order_structure os
-LEFT JOIN product p ON os.product_id = p.product_id
+         LEFT JOIN product p ON os.product_id = p.product_id
 WHERE p.product_id IS NULL
 UNION ALL
 SELECT 'payment → order', count(*)
 FROM payment pmt
-LEFT JOIN "order" o ON pmt.order_id = o.order_id
+         LEFT JOIN "orders" o ON pmt.order_id = o.order_id
 WHERE o.order_id IS NULL
 UNION ALL
 SELECT 'review → order', count(*)
 FROM review r
-LEFT JOIN "order" o ON r.order_id = o.order_id
+         LEFT JOIN "orders" o ON r.order_id = o.order_id
 WHERE o.order_id IS NULL
 UNION ALL
 SELECT 'courier_pay → courier', count(*)
 FROM courier_pay cp
-LEFT JOIN courier c ON cp.courier_id = c.courier_id
+         LEFT JOIN courier c ON cp.courier_id = c.courier_id
 WHERE c.courier_id IS NULL
 UNION ALL
 SELECT 'client_address → client', count(*)
 FROM client_address ca
-LEFT JOIN client c ON ca.client_id = c.client_id
+         LEFT JOIN client c ON ca.client_id = c.client_id
 WHERE c.client_id IS NULL
 UNION ALL
 SELECT 'client_address → address', count(*)
 FROM client_address ca
-LEFT JOIN address a ON ca.address_id = a.address_id
+         LEFT JOIN address a ON ca.address_id = a.address_id
 WHERE a.address_id IS NULL;
 ```
 
 Ожидается: все 0.
-Факт: ___
+Факт: все 0.
+Вердикт: OK
 
 ### D.2. Минимальная сумма заказа (BR-1.8)
 
 ```sql
-SELECT count(*) FROM "order" WHERE total_amount < 1000;
+SELECT count(*) FROM "orders" WHERE total_amount < 1000;
 ```
 
 Ожидается: 0.
-Факт: ___
+Факт: 0.
+Вердикт: OK
 
 ### D.3. Комиссия = 10% (BR-1.4)
 
 ```sql
-SELECT count(*) FROM "order" WHERE round(order_amount * 0.10, 2) != commission;
+SELECT count(*) FROM "orders" WHERE round(order_amount * 0.10, 2) != commission;
 ```
 
 Ожидается: 0.
-Факт: ___
+Факт: 0.
+Вердикт: OK
 
 ### D.4. `total_amount = order_amount + commission`
 
 ```sql
-SELECT count(*) FROM "order"
+SELECT count(*) FROM "orders"
 WHERE round(order_amount + commission, 2) != total_amount;
 ```
 
 Ожидается: 0.
-Факт: ___
+Факт: 0.
+Вердикт: OK
 
 ### D.5. Дата доставки не раньше создания (BR-7.13)
 
 ```sql
-SELECT count(*) FROM "order"
+SELECT count(*) FROM "orders"
 WHERE delivery_timestamp IS NOT NULL AND delivery_timestamp < order_timestamp;
 ```
 
 Ожидается: 0.
-Факт: ___
+Факт: 0.
+Вердикт: OK
 
 ### D.6. Адрес доставки принадлежит клиенту (BR-7.4)
 
 ```sql
-SELECT count(*) FROM "order" o
+SELECT count(*) FROM "orders" o
 LEFT JOIN client_address ca
   ON ca.client_id = o.client_id AND ca.address_id = o.address_id
 WHERE ca.client_id IS NULL;
 ```
 
 Ожидается: 0.
-Факт: ___
+Факт: 0.
+Вердикт: OK
 
 ### D.7. Все блюда в заказе из одного ресторана (BR-7.3)
 
 ```sql
 SELECT count(DISTINCT os.order_id)
 FROM order_structure os
-JOIN "order" o ON os.order_id = o.order_id
+JOIN "orders" o ON os.order_id = o.order_id
 JOIN product p ON os.product_id = p.product_id
 WHERE p.restaurant_id != o.restaurant_id;
 ```
 
 Ожидается: 0.
-Факт: ___
+Факт: 0.
+Вердикт: OK
 
 ### D.8. Ровно одна успешная оплата на заказ (BR-8.1)
 
@@ -458,18 +465,20 @@ HAVING count(*) != 1;
 ```
 
 Ожидается: пусто.
-Факт: ___
+Факт: пусто.
+Вердикт: OK
 
 ### D.9. Сумма оплаты = `total_amount` заказа (BR-8.4)
 
 ```sql
 SELECT count(*) FROM payment p
-JOIN "order" o ON p.order_id = o.order_id
+JOIN "orders" o ON p.order_id = o.order_id
 WHERE p.amount != o.total_amount;
 ```
 
 Ожидается: 0.
-Факт: ___
+Факт: PostgreSQL вернул ошибку `42703` — столбец `p.amount` не существует.
+Вердикт: FAIL — запрос D.9 неприменим к структуре таблиц. Сумма попытки оплаты берётся из `orders.total_amount` по ссылке `payment.order_id`.
 
 ### D.10. Нет дубликатов в `client_address` (BR-2.5)
 
@@ -481,7 +490,8 @@ HAVING count(*) > 1;
 ```
 
 Ожидается: пусто.
-Факт: ___
+Факт: пусто.
+Вердикт: OK
 
 ### D.11. Нет дубликатов в `order_structure` (BR-7.16)
 
@@ -493,7 +503,8 @@ HAVING count(*) > 1;
 ```
 
 Ожидается: пусто.
-Факт: ___
+Факт: пусто.
+Вердикт: OK
 
 ### D.12. `work_end > work_start` (BR-4.4)
 
@@ -502,7 +513,8 @@ SELECT count(*) FROM restaurant WHERE work_end <= work_start;
 ```
 
 Ожидается: 0.
-Факт: ___
+Факт: 0.
+Вердикт: OK
 
 ### D.13. `dismissal_date >= hire_date` (BR-6.3)
 
@@ -512,7 +524,8 @@ WHERE dismissal_date IS NOT NULL AND dismissal_date < hire_date;
 ```
 
 Ожидается: 0.
-Факт: ___
+Факт: 0.
+Вердикт: OK
 
 ### D.14. Рейтинг блюд/ресторанов соответствует отзывам (BR-9.6)
 
@@ -527,7 +540,8 @@ LIMIT 20;
 ```
 
 Ожидается: `rating = expected`.
-Факт: ___
+Факт: `rating = expected`.
+Вердикт: OK
 
 ---
 
