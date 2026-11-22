@@ -927,7 +927,7 @@ UNION ALL SELECT 'product_category', count(*) FROM product_category
 UNION ALL SELECT 'restaurant', count(*) FROM restaurant
 UNION ALL SELECT 'address', count(*) FROM address
 UNION ALL SELECT 'product', count(*) FROM product
-UNION ALL SELECT 'order', count(*) FROM "order"
+UNION ALL SELECT 'order', count(*) FROM "orders"
 UNION ALL SELECT 'review', count(*) FROM review
 UNION ALL SELECT 'payment', count(*) FROM payment
 UNION ALL SELECT 'order_structure', count(*) FROM order_structure
@@ -936,7 +936,8 @@ UNION ALL SELECT 'courier_pay', count(*) FROM courier_pay;
 ```
 
 Ожидается: все 0.
-Факт: ___
+Факт: все 0.
+Вердикт: OK
 
 ### I.2. Повторный `erase_test_data` не падает
 
@@ -945,15 +946,17 @@ CALL erase_test_data();
 ```
 
 Ожидается: без ошибок.
-Факт: ___
+Факт: без ошибок.
+Вердикт: OK
 
 ### I.3. После очистки `insert_test_data` снова работает
 
 ```sql
 CALL insert_test_data(10);
-SELECT count(*) FROM "order";
+SELECT count(*) FROM "orders";
 ```
 
 Ожидается: 50.
-Факт: ___
+Факт: 50.
+Вердикт: OK
 
