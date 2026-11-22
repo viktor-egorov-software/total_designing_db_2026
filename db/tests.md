@@ -26,20 +26,20 @@
 ### A.1. Восстановление бэкапа
 
 Ожидается: без ошибок.
-Факт: ___
-Вердикт: ___
+Факт: без ошибок.
+Вердикт: OK
 
 ### A.2. Переключение на inspector
 
 ```sql
 SET ROLE inspector;
-SET search_path TO <фамилия>_food, exts;
+SET search_path TO egorov_food, exts;
 SELECT current_user;
 ```
 
 Ожидается: `inspector`.
-Факт: ___
-Вердикт: ___
+Факт: `inspector`.
+Вердикт: OK
 
 ---
 
@@ -53,7 +53,8 @@ WHERE schema_name LIKE '%_food';
 ```
 
 Ожидается: `<фамилия>_food`.
-Факт: ___
+Факт: `egorov_food`.
+Вердикт: OK
 
 ### B.2. Схема `exts` с `uuid-ossp`
 
@@ -63,31 +64,34 @@ FROM pg_extension WHERE extname = 'uuid-ossp';
 ```
 
 Ожидается: `uuid-ossp`, схема `exts`.
-Факт: ___
+Факт: `uuid-ossp`, схема `exts`.
+Вердикт: OK
 
 ### B.3. Все 12 исходных таблиц + N после нормализации
 
 ```sql
 SELECT table_name FROM information_schema.tables
-WHERE table_schema = '<фамилия>_food'
+WHERE table_schema = 'egorov_food'
 ORDER BY table_name;
 ```
 
 Ожидается: `address`, `client`, `client_address`, `courier`, `courier_pay`, `order`, `order_structure`, `payment`, `product`, `product_category`, `restaurant`, `review` (12 + N штук).
-Факт: ___
+Факт: `address`, `client`, `client_address`, `courier`, `courier_pay`, `orders` (`order` зарезервировано), `order_structure`, `payment`, `product`, `product_category`, `restaurant`, `review`, `how_much_money` (12 таблиц + 1 представление).
+Вердикт: OK
 
 ### B.4. Все PK — `uuid`
 
 ```sql
 SELECT table_name, column_name, data_type
 FROM information_schema.columns
-WHERE table_schema = '<фамилия>_food'
+WHERE table_schema = 'egorov_food'
   AND column_name LIKE '%_id'
   AND data_type != 'uuid';
 ```
 
 Ожидается: пусто.
-Факт: ___
+Факт: пусто.
+Вердикт: OK
 
 ### B.5. Enum-типы
 
@@ -96,13 +100,14 @@ SELECT t.typname, array_agg(e.enumlabel ORDER BY e.enumsortorder) AS values
 FROM pg_type t
 JOIN pg_enum e ON t.oid = e.enumtypid
 JOIN pg_namespace n ON n.oid = t.typnamespace
-WHERE n.nspname = '<фамилия>_food'
+WHERE n.nspname = 'egorov_food'
 GROUP BY t.typname
 ORDER BY t.typname;
 ```
 
 Ожидается: 8 типов со значениями из constraints.md.
-Факт: ___
+Факт: 8 типов со значениями из constraints.md.
+Вердикт: OK
 
 ### B.6. FK-ограничения
 
@@ -110,12 +115,16 @@ ORDER BY t.typname;
 SELECT conname, conrelid::regclass AS tbl, confrelid::regclass AS ref
 FROM pg_constraint
 WHERE contype = 'f'
-  AND connamespace = '<фамилия>_food'::regnamespace
+  AND connamespace = 'egorov_food'::regnamespace
 ORDER BY tbl, conname;
 ```
 
 Ожидается: не менее 15 FK, все из erd.md.
-Факт: ___
+Факт: 13 FK.
+Вердикт: FAIL —  в схеме 13 внешних ключей при требуемом минимуме 15.
+
+Один FK убран при нормализации `review`, ещё два отдельных FK заказа объединены в один для проверки пары «клиент–адрес»,
+чтобы адрес гарантированно относился к клиенту.
 
 ### B.7. Пароль — MD5
 
@@ -125,7 +134,10 @@ FROM client LIMIT 5;
 ```
 
 Ожидается: `len = 32`, hex-строка.
-Факт: ___
+Факт: 5 hex-строк с `len = 32`.
+Вердикт: OK
+
+Выполнялось после C.2, так как для выполнения запроса таблица уже должна быть наполнена тестовыми данными.
 
 ---
 
@@ -138,7 +150,8 @@ CALL erase_test_data();
 ```
 
 Ожидается: без ошибок.
-Факт: ___
+Факт: без ошибок.
+Вердикт: OK
 
 ### C.2. Первый запуск
 
@@ -147,7 +160,8 @@ CALL insert_test_data(10);
 ```
 
 Ожидается: без ошибок.
-Факт: ___
+Факт: без ошибок.
+Вердикт: OK
 
 ### C.3. Распределение строк (BR-11.7)
 
