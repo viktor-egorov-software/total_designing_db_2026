@@ -803,53 +803,57 @@ SELECT
     has_schema_privilege('inspector', nspname, 'USAGE')  AS usage,
     has_schema_privilege('inspector', nspname, 'CREATE') AS create
 FROM pg_namespace
-WHERE nspname = '<фамилия>_food';
+WHERE nspname = 'egorov_food';
 ```
 
 Ожидается: `<фамилия>_food`, `true`, `true` (полный доступ).
-Факт: ___
+Факт: `egorov_food`, `true`, `true`.
+Вердикт: OK.
 
 ### G.2. Права на таблицы
 
 ```sql
 SELECT table_name, string_agg(privilege_type, ', ') AS privs
 FROM information_schema.role_table_grants
-WHERE grantee = 'inspector' AND table_schema = '<фамилия>_food'
+WHERE grantee = 'inspector' AND table_schema = 'egorov_food'
 GROUP BY table_name;
 ```
 
 Ожидается: у каждой таблицы `SELECT, INSERT, UPDATE, DELETE` (или `ALL`).
-Факт: ___
+Факт: у каждой таблицы `SELECT, INSERT, UPDATE, DELETE, TRUNCATE`.
+Вердикт: OK.
 
 ### G.3. `information_schema` читается под `inspector`
 
 ```sql
 SET ROLE inspector;
 SELECT count(*) FROM information_schema.tables
-WHERE table_schema = '<фамилия>_food';
+WHERE table_schema = 'egorov_food';
 RESET ROLE;
 ```
 
 Ожидается: 12 + N (количество таблиц).
-Факт: ___
+Факт: 13 (12 таблиц + 1 представление).
+Вердикт: OK.
 
 ### G.4. `pg_catalog` читается под `inspector`
 
 ```sql
 SET ROLE inspector;
 SELECT count(*) FROM pg_catalog.pg_tables
-WHERE schemaname = '<фамилия>_food';
+WHERE schemaname = 'egorov_food';
 RESET ROLE;
 ```
 
 Ожидается: 12 + N.
-Факт: ___
+Факт: 12.
+Вердикт: OK.
 
 ### G.5. Все процедуры/функции работают под `inspector`
 
 ```sql
 SET ROLE inspector;
-SET search_path TO <фамилия>_food, exts;
+SET search_path TO egorov_food, exts;
 
 CALL erase_test_data();
 CALL insert_test_data(10);
@@ -861,7 +865,8 @@ RESET ROLE;
 ```
 
 Ожидается: без `permission denied`.
-Факт: ___
+Факт: все процедуры и функции работают под ролью `inspector` (без `permission denied`).
+Вердикт: OK.
 
 ---
 
