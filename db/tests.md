@@ -552,59 +552,101 @@ LIMIT 20;
 ```sql
 SELECT count(*) AS before FROM product;
 
-CALL add_product(
-    p_restaurant_id => (SELECT restaurant_id FROM restaurant LIMIT 1),
-    p_product_category_id => (SELECT product_category_id FROM product_category LIMIT 1),
-    p_name => 'Тестовое блюдо',
-    p_price => 250,
-    p_rating => 4.5,
-    p_status => 'доступно',
-    p_description => 'Описание'
-    -- + photo_url если есть
-);
+DO $$
+DECLARE
+    v_restaurant_id uuid;
+    v_category_id uuid;
+BEGIN
+    SELECT restaurant_id INTO v_restaurant_id FROM restaurant LIMIT 1;
+    SELECT product_category_id INTO v_category_id FROM product_category LIMIT 1;
+
+    CALL add_product(
+        p_product_name => 'Тестовое блюдо',
+        p_product_category_id => v_category_id,
+        p_price => 250,
+        p_restaurant_id => v_restaurant_id,
+        p_photo_url => NULL,
+        p_status => 'доступно',
+        p_description => 'Описание'
+    );
+END;
+$$;
 
 SELECT count(*) AS after FROM product;
 ```
 
 Ожидается: `after = before + 1`.
-Факт: ___
+Факт: 551 = 550 + 1 (с исправленным запросом).
+Вердикт: OK
+
+По BR-9.6 рейтинг блюда равен средней оценке по отзывам на него. У нового блюда
+отзывов ещё нет, поэтому его рейтинг равен `NULL` (BR-9.7). Процедура
+`add_product` не принимает параметр `p_rating`. При добавлении, изменении или
+удалении отзыва триггер `rating_change` пересчитывает рейтинг.
 
 ### E.2. `add_product` — падает на несуществующий ресторан
 
 ```sql
-CALL add_product(
-    p_restaurant_id => '00000000-0000-0000-0000-000000000000',
-    -- остальные аргументы
-);
+DO $$
+DECLARE
+    v_category_id uuid;
+BEGIN
+    SELECT product_category_id INTO v_category_id FROM product_category LIMIT 1;
+
+    CALL add_product(
+        p_product_name => 'Тестовое блюдо',
+        p_product_category_id => v_category_id,
+        p_price => 250,
+        p_restaurant_id => '00000000-0000-0000-0000-000000000000',
+        p_photo_url => NULL,
+        p_status => 'доступно',
+        p_description => 'Описание'
+    );
+END;
+$$;
 ```
 
 Ожидается: ошибка с внятным сообщением.
-Факт: ___
+Факт: SQL Error [P0001]: ОШИБКА: Ресторан с ID 00000000-0000-0000-0000-000000000000 не существует.
+Вердикт: OK
 
 ### E.3. `rating_change` — пересчитывает рейтинг
 
 ```sql
--- Выбрать заказ, блюдо и клиента
-SELECT p.product_id, p.rating FROM product p WHERE p.rating IS NOT NULL LIMIT 1;
+-- Выбрать блюдо с рейтингом и заказ, в котором на него ещё нет отзыва
+SELECT os.order_id, os.product_id, p.rating
+FROM order_structure os
+JOIN product p ON p.product_id = os.product_id
+WHERE p.rating IS NOT NULL
+  AND NOT EXISTS (
+      SELECT 1 FROM review r
+      WHERE r.order_id = os.order_id AND r.entity_id = os.product_id AND r.entity_type = 'блюдо'
+  )
+LIMIT 1;
 
 -- Вставить отзыв на это блюдо
-INSERT INTO review (review_id, client_id, review_timestamp, entity_id, entity_type, order_id, description, rating)
+INSERT INTO review (review_id, review_timestamp, entity_id, entity_type, order_id, description, rating)
 VALUES (
     exts.uuid_generate_v4(),
-    (SELECT client_id FROM client LIMIT 1),
     localtimestamp,
     <product_id>,
     'блюдо',
-    (SELECT order_id FROM "order" LIMIT 1),
+    <order_id>,
     'Тестовый отзыв',
     5
-);
+)
+RETURNING review_id;
 
 SELECT rating FROM product WHERE product_id = <product_id>;
 ```
 
 Ожидается: `rating` пересчитан.
-Факт: ___
+Факт: было 4, стало 4,5 (с исправленным запросом).
+Вердикт: OK
+
+Из `INSERT` убран `client_id`: автор отзыва определяется через `review.order_id`.
+Блюдо и заказ выбираются вместе из `order_structure`, чтобы блюдо входило в заказ (BR-9.2).
+Для этой пары ещё можно оставить отзыв (BR-9.5). `RETURNING review_id` выдаёт ID для удаления отзыва в E.4.
 
 ### E.4. `rating_change` — удаление отзыва
 
@@ -616,7 +658,8 @@ SELECT rating FROM product WHERE product_id = <product_id>;
 ```
 
 Ожидается: если других отзывов нет — `rating IS NULL`; иначе — пересчитан.
-Факт: ___
+Факт: было 4,5, стало 4.
+Вердикт: OK
 
 ### E.5. `get_statistic()`
 
@@ -627,9 +670,14 @@ SELECT * FROM get_statistic();
 Ожидается:
 - Колонки: `restaurant_name`, `best_product_name`, `total_amount`, `avg_amount`, `best_user`.
 - По одной строке на ресторан.
-- `best_user` = `client.login` (не NULL при наличии заказов).
+- `best_user` = `client.login` (не NULL при наличии доставленных заказов).
 
-Факт: ___
+Факт:
+- Колонки: `restaurant_name`, `best_product_name`, `total_amount`, `avg_amount`, `best_user`.
+- По одной строке на ресторан.
+- `best_user` = `client.login` (NULL, если у ресторана нет доставленных заказов).
+
+Вердикт: OK
 
 ### E.6. `courier_salary()`
 
@@ -652,11 +700,20 @@ LIMIT 20;
 - У уволенных — не изменился.
 - `courier_pay` содержит запись за текущий месяц.
 
-Факт: ___
+Факт:
+- `courier.coefficient` пересчитан для работающих (по BR-10.2) — остался 0,1 из-за числа заказов.
+- У уволенных — не изменился.
+- `courier_pay` содержит запись за текущий месяц.
+
+Вердикт: OK
 
 ### E.7. `courier_salary()` — повторный вызов
 
 ```sql
+SELECT count(*) FROM courier_pay
+WHERE year = extract(year from current_date)
+  AND month = extract(month from current_date);
+
 CALL courier_salary();
 SELECT count(*) FROM courier_pay
 WHERE year = extract(year from current_date)
@@ -664,7 +721,8 @@ WHERE year = extract(year from current_date)
 ```
 
 Ожидается: количество не изменилось (idempotency / обновление).
-Факт: ___
+Факт: количество не изменилось — было 110, стало 110
+Вердикт: OK
 
 ---
 
