@@ -172,14 +172,15 @@ UNION ALL SELECT 'product_category', count(*) FROM product_category
 UNION ALL SELECT 'restaurant', count(*) FROM restaurant
 UNION ALL SELECT 'address', count(*) FROM address
 UNION ALL SELECT 'product', count(*) FROM product
-UNION ALL SELECT 'order', count(*) FROM "order"
+UNION ALL SELECT 'order', count(*) FROM "orders"
 UNION ALL SELECT 'review', count(*) FROM review
 UNION ALL SELECT 'payment', count(*) FROM payment
 ORDER BY tbl;
 ```
 
 Ожидается: 10, 10, 10, 10, 50, 50, 50, 50, 50.
-Факт: ___
+Факт: 10, 10, 10, 10, 50, 50, 50, 50, 50.
+Вердикт: OK
 
 ### C.4. Адреса ресторанов vs клиентов (BR-11.7)
 
@@ -190,28 +191,107 @@ SELECT 'total addresses', count(*) FROM address;
 ```
 
 Ожидается: 10 ресторанных адресов, 50 всего → 40 клиентских.
-Факт: ___
+Факт: 10 ресторанных адресов, 50 всего → 40 клиентских.
+Вердикт: OK
 
 ### C.5. Нет пустых строк (BR-11.3)
 
 ```sql
-SELECT count(*) FROM client WHERE login = '' OR password = '' OR phone_number = '';
--- и аналогично для других varchar-полей с NOT NULL
+SELECT 'client' AS table_name, count(*) AS rows_with_empty_values
+FROM client
+WHERE login = '' OR password = '' OR phone_number = ''
+UNION ALL
+SELECT 'address', count(*)
+FROM address
+WHERE street = '' OR house_number = ''
+UNION ALL
+SELECT 'restaurant', count(*)
+FROM restaurant
+WHERE restaurant_name = '' OR inn = '' OR ogrn = '' OR bank_account = ''
+UNION ALL
+SELECT 'product_category', count(*)
+FROM product_category
+WHERE product_category_name = ''
+UNION ALL
+SELECT 'product', count(*)
+FROM product
+WHERE product_name = ''
+UNION ALL
+SELECT 'courier', count(*)
+FROM courier
+WHERE last_name = '' OR first_name = '' OR phone_number = '';
 ```
 
 Ожидается: 0.
-Факт: ___
+Факт: Во всех строках 0.
+Вердикт: OK
 
 ### C.6. Нет NULL там, где запрещено (BR-11.3)
 
 ```sql
-SELECT count(*) FROM "order" WHERE client_id IS NULL OR restaurant_id IS NULL
-  OR courier_id IS NULL OR address_id IS NULL OR total_amount IS NULL;
--- и аналогично для других NOT NULL полей
+SELECT 'client' AS table_name, count(*) AS rows_with_forbidden_nulls
+FROM client
+WHERE client_id IS NULL OR login IS NULL OR password IS NULL OR phone_number IS NULL
+UNION ALL
+SELECT 'address', count(*)
+FROM address
+WHERE address_id IS NULL OR street IS NULL OR house_number IS NULL
+UNION ALL
+SELECT 'client_address', count(*)
+FROM client_address
+WHERE client_id IS NULL OR address_id IS NULL
+UNION ALL
+SELECT 'restaurant', count(*)
+FROM restaurant
+WHERE restaurant_id IS NULL OR restaurant_name IS NULL OR address_id IS NULL
+   OR description IS NULL OR work_start IS NULL OR work_end IS NULL OR inn IS NULL
+   OR ogrn IS NULL OR bank_account IS NULL OR status IS NULL
+UNION ALL
+SELECT 'product_category', count(*)
+FROM product_category
+WHERE product_category_id IS NULL OR product_category_name IS NULL
+UNION ALL
+SELECT 'product', count(*)
+FROM product
+WHERE product_id IS NULL OR product_name IS NULL OR product_category_id IS NULL
+   OR price IS NULL OR restaurant_id IS NULL OR status IS NULL OR description IS NULL
+UNION ALL
+SELECT 'courier', count(*)
+FROM courier
+WHERE courier_id IS NULL OR last_name IS NULL OR first_name IS NULL
+   OR phone_number IS NULL OR status IS NULL OR hire_date IS NULL
+   OR coefficient IS NULL
+UNION ALL
+SELECT 'courier_pay', count(*)
+FROM courier_pay
+WHERE year IS NULL OR month IS NULL OR courier_id IS NULL OR amount IS NULL
+   OR coefficient_used IS NULL
+UNION ALL
+SELECT 'orders', count(*)
+FROM orders
+WHERE order_id IS NULL OR client_id IS NULL OR address_id IS NULL
+   OR restaurant_id IS NULL OR order_timestamp IS NULL OR order_amount IS NULL
+   OR commission IS NULL OR total_amount IS NULL OR status IS NULL
+   OR pay_status IS NULL
+UNION ALL
+SELECT 'order_structure', count(*)
+FROM order_structure
+WHERE order_id IS NULL OR product_id IS NULL OR quantity IS NULL
+UNION ALL
+SELECT 'payment', count(*)
+FROM payment
+WHERE payment_id IS NULL OR order_id IS NULL OR payment_type IS NULL
+   OR transaction_id IS NULL OR transaction_timestamp IS NULL OR status IS NULL
+UNION ALL
+SELECT 'review', count(*)
+FROM review
+WHERE review_id IS NULL OR review_timestamp IS NULL OR entity_id IS NULL
+   OR entity_type IS NULL OR order_id IS NULL OR description IS NULL OR rating IS NULL;
 ```
 
 Ожидается: 0.
-Факт: ___
+Факт: Во всех строках 0.
+Вердикт: OK
 
 ### C.7. Минимум один активный курьер (BR-6.6)
 
@@ -220,7 +300,8 @@ SELECT count(*) FROM courier WHERE status != 'уволен';
 ```
 
 Ожидается: `>= 1`.
-Факт: ___
+Факт: 6.
+Вердикт: OK
 
 ### C.8. `courier_pay` консистентен с правилами (BR-10.2)
 
@@ -228,7 +309,7 @@ SELECT count(*) FROM courier WHERE status != 'уволен';
 SELECT cp.year, cp.month, cp.courier_id, cp.amount, cp.coefficient_used,
        round(coalesce((
            SELECT sum(o.commission)
-           FROM "order" o
+           FROM "orders" o
            WHERE o.courier_id = cp.courier_id
              AND o.status = 'доставлен'
              AND extract(year  from o.order_timestamp) = cp.year
@@ -239,7 +320,8 @@ LIMIT 20;
 ```
 
 Ожидается: `amount = expected_amount` в каждой строке.
-Факт: ___
+Факт: `amount = expected_amount` в каждой строке.
+Вердикт: OK
 
 ### C.9. Повторный вызов не ломает
 
@@ -253,7 +335,8 @@ END $$;
 ```
 
 Ожидается: без ошибок, данные добавляются или заменяются (по решению студента, задокументированному в constraints.md).
-Факт: ___
+Факт: без ошибок, данные добавляются (задокументированно в constraints.md).
+Вердикт: OK
 
 ---
 
